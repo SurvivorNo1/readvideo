@@ -173,7 +173,10 @@ def create_server(host='127.0.0.1', port=4174, debug_key=''):
                         mode, language = data.get('mode', 'brief'), data.get('language', 'zh')
                         if mode not in ('brief', 'article') or language not in ('zh', 'en'):
                             raise ValueError('请选择有效的输出形式和语言。')
-                        self.reply(202, job(lambda progress: summarize(transcript, config, mode, language, progress)))
+                        length = data.get('length', 'medium')
+                        if not isinstance(length, str) or length not in ('short', 'medium', 'long', 'detailed'):
+                            raise ValueError('请选择短篇、中篇、长篇或详细。')
+                        self.reply(202, job(lambda progress: summarize(transcript, config, mode, language, progress, length=length)))
                 else:
                     self.reply(404, {'error': '接口不存在。'})
             except (ValueError, TypeError, KeyError, UnicodeError) as error:

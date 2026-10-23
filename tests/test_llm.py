@@ -7,6 +7,44 @@ from readvideo.llm import resolve_config, summarize, chat_request
 
 
 class APIContracts(unittest.TestCase):
+    def test_article_lengths_have_distinct_prompts_budgets_and_metadata(self):
+        source={'title':'Source topic','segments':[{'start':0,'text':'Evidence about the topic.'}]}
+        budgets=[]
+        for length, target in [('short','300–500'),('medium','800–1500'),('long','1800–3000'),('detailed','3000–5000')]:
+            with patch('readvideo.llm.chat_request',return_value='# Article') as request:
+                result=summarize(source,{'model':'m'},'article','zh',length=length)
+            self.assertEqual(result['length'],length)
+            self.assertIn(target,request.call_args.args[1][1]['content'])
+            budgets.append(request.call_args.kwargs['max_tokens'])
+        self.assertEqual(budgets,sorted(set(budgets)))
+        self.assertGreaterEqual(budgets[-1],10000)
+
+    def test_correction_rules_preserve_evidence_and_original_subtitles(self):
+        source={'title':'Source topic','segments':[{'start':0,'text':'Negation 3.14 original term'}]}
+        with patch('readvideo.llm.chat_request',return_value='# Article') as request:
+            summarize(source,{'model':'m'},'article','en',length='long')
+        messages=request.call_args.args[1]
+        for rule in ['明显的转写错误','数字','否定','存疑','外部事实核查','字幕原文']:
+            self.assertIn(rule,messages[0]['content'])
+        self.assertIn('1200–2000 English words',messages[1]['content'])
+        self.assertIn('围绕视频主题',messages[1]['content'])
+        self.assertEqual(source['segments'][0]['text'],'Negation 3.14 original term')
+
+    def test_chosen_length_survives_multi_chunk_synthesis(self):
+        source={'segments':[{'start':i,'text':'e'*6000} for i in range(3)]}
+        with patch('readvideo.llm.chat_request',return_value='Notes [00:00]') as request:
+            result=summarize(source,{'model':'m'},'article','zh',length='detailed')
+        self.assertGreater(request.call_count,1)
+        self.assertIn('3000–5000',request.call_args.args[1][1]['content'])
+        self.assertGreaterEqual(request.call_args.kwargs['max_tokens'],10000)
+        self.assertEqual(result['length'],'detailed')
+
+    def test_unknown_length_is_rejected_without_calling_provider(self):
+        with patch('readvideo.llm.chat_request') as request:
+            with self.assertRaises(ValueError):
+                summarize({'segments':[{'start':0,'text':'Source'}]},{},'article',length='huge')
+        request.assert_not_called()
+
     def test_debug_key_is_available_only_to_official_deepseek(self):
         config=resolve_config({'provider':'deepseek','base_url':'https://api.deepseek.com','model':'deepseek-chat'},'memory-only-secret')
         self.assertEqual(config['api_key'],'memory-only-secret')

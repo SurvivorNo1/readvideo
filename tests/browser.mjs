@@ -48,6 +48,21 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("http://127.0.0.1:4184");
+  await step("article length offers four choices and is sent to generation", async () => {
+    await page.getByRole('radio', {name:'完整文章', exact:true}).check();
+    const length = page.getByLabel('文章篇幅', {exact:true});
+    assert.equal(await length.locator('option').count(),4);
+    for (const value of ['short','medium','long','detailed']) {
+      await length.selectOption(value);
+      await page.getByLabel('视频链接',{exact:true}).fill('https://www.youtube.com/watch?v=fixture');
+      const sent = page.waitForRequest(r => r.url().endsWith('/api/generate'));
+      await page.getByRole('button',{name:'提取并生成',exact:true}).click();
+      const body = (await sent).postDataJSON();
+      assert.equal(body.length,value);
+      await page.waitForFunction(() => !document.querySelector('#generate').disabled);
+      assert.match(await page.locator('#result-meta').textContent(), /短篇|中篇|长篇|详细/);
+    }
+  });
   await step(
     "single-page interface has a link entry, two modes and a configuration drawer",
     async () => {
@@ -130,6 +145,21 @@ try {
     );
     page.off("request", listener);
     assert.equal(generated, false);
+  });
+  await step("search filters only the view; caption export preserves first and final cues", async () => {
+    await page.getByRole('tab',{name:/原字幕/}).click();
+    await page.getByLabel('搜索字幕',{exact:true}).fill('先明确');
+    assert.equal(await page.locator('.cue').count(),1);
+    const waiting=page.waitForEvent('download');
+    await page.getByRole('button',{name:'导出 Markdown',exact:true}).click();
+    const file=path.join(root,'.qa/full-transcript.md');
+    await (await waiting).saveAs(file);
+    const content=await fs.readFile(file,'utf8');
+    assert.match(content,/先明确/);
+    assert.match(content,/不要只记住结论/);
+    assert.match(content,/01:32/);
+    await page.getByLabel('搜索字幕',{exact:true}).fill('');
+    assert.equal(await page.locator('.cue').count(),3);
   });
   await step(
     "missing captions are displayed as an error, not invented text",

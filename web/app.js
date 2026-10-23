@@ -200,6 +200,9 @@ function renderTranscript() {
     root.append(row);
   }
   if (!matches) root.append(make("p", "cue-empty", "没有找到匹配的字幕。"));
+  $("#transcript-status").textContent = query
+    ? `匹配 ${matches} / ${transcript.segments.length} 条 · 复制与导出仍包含完整字幕`
+    : `完整字幕 · 共 ${transcript?.segments.length || 0} 条 · 保留时间点，复制与导出包含全文`;
 }
 function selectTab(tab) {
   activeTab = tab;
@@ -244,7 +247,7 @@ function updateReading() {
   if (result) {
     renderArticle(result.markdown);
     $("#result-meta").textContent =
-      `${result.model} · ${result.mode === "brief" ? "速读摘要" : "完整文章"} · 基于字幕生成`;
+      `${result.model} · ${result.mode === "brief" ? "速读摘要" : ({short:"短篇文章",medium:"中篇文章",long:"长篇文章",detailed:"详细文章"}[result.length] || "完整文章")} · 基于字幕校订整理`;
     $("#reading-time").textContent =
       `约 ${Math.max(1, Math.ceil(result.markdown.length / 450))} 分钟阅读`;
   } else {
@@ -260,6 +263,7 @@ async function generateCurrent() {
   const job = await api("/api/generate", {
     transcript_id: transcript.transcript_id,
     mode,
+    length: $("#article-length").value,
     language: config.output_language,
     config,
   });
@@ -544,3 +548,11 @@ init().catch(() => {
   );
   $("#generate").disabled = true;
 });
+
+for (const choice of document.querySelectorAll('[name=mode]')) {
+  choice.addEventListener('change', () => {
+    const summary = document.querySelector('[name=mode]:checked').value === 'brief';
+    document.querySelector('#length-control').hidden = summary;
+    document.querySelector('#article-length').disabled = summary;
+  });
+}

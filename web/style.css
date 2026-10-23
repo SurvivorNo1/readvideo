@@ -1550,3 +1550,17 @@ dialog {
     font-size: 11px;
   }
 }
+
+#length-control { flex-shrink: 0; }
+#length-control[hidden] { display: none; }
+#article-length { max-width: 170px; }
+.entry-options { flex-wrap: wrap; row-gap: 12px; }
+.transcript-header { gap: 16px; }
+#transcript-status { line-height: 1.7; }
+@media (max-width: 640px) {
+  #length-control { margin-left: auto; }
+  .entry-options { gap: 12px 8px; }
+  .entry-options .option-divider { display: none; }
+  #extract-only { margin-left: auto; }
+  .transcript-header { flex-wrap: wrap; }
+}

@@ -54,5 +54,18 @@ class HTTPContracts(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as error:self.request('/api/generate',{'transcript_id':'missing','mode':'brief','config':{'provider':'deepseek','model':'m'}})
         self.assertEqual(error.exception.code,400)
 
+    def test_article_length_is_forwarded_and_invalid_lengths_are_rejected(self):
+        source=json.load(self.request('/api/import',{'title':'Test','content':'1\n00:00:00,000 --> 00:00:01,000\nEntire source.\n','format':'srt'}))
+        data={'transcript_id':source['transcript_id'],'mode':'article','length':'detailed','config':{'provider':'deepseek'}}
+        with patch('readvideo.server.summarize',return_value={'markdown':'Article'}) as generate:
+            job=json.load(self.request('/api/generate',data))
+            for _ in range(30):
+                if generate.called:break
+                time.sleep(.01)
+            self.assertEqual(generate.call_args.kwargs.get('length'),'detailed')
+        data['length']='huge'
+        with self.assertRaises(urllib.error.HTTPError) as error:self.request('/api/generate',data)
+        self.assertEqual(error.exception.code,400)
+
 
 if __name__=='__main__': unittest.main()

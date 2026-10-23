@@ -55,15 +55,16 @@
           <div class="entry-options">
             <div class="mode-control" aria-label="生成形式">
               <label
-                ><input type="radio" name="mode" value="brief" checked /><span
+                ><input type="radio" name="mode" value="brief" /><span
                   >速读摘要</span
                 ></label
               ><label
-                ><input type="radio" name="mode" value="article" /><span
+                ><input type="radio" name="mode" value="article" checked /><span
                   >完整文章</span
                 ></label
               >
             </div>
+            <label class="language-select" id="length-control"><span>篇幅</span><select id="article-length" aria-label="文章篇幅"><option value="short">短篇 · 300–500 字</option><option value="medium" selected>中篇 · 800–1,500 字</option><option value="long">长篇 · 1,800–3,000 字</option><option value="detailed">详细 · 3,000–5,000 字</option></select></label>
             <span class="option-divider"></span
             ><label class="language-select"
               ><span>字幕</span
@@ -164,7 +165,7 @@
           hidden
         >
           <div class="transcript-header">
-            <span>保留原始时间点，方便回看核对。</span
+            <span id="transcript-status">完整字幕 · 保留原始时间点。搜索仅筛选显示，复制与导出包含全文。</span
             ><input
               id="search"
               type="search"

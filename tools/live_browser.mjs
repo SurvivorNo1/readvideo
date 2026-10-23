@@ -15,7 +15,9 @@ try{
   await page.goto('http://127.0.0.1:4174');await page.getByLabel('视频链接',{exact:true}).waitFor();
   await page.screenshot({path:path.join(root,'docs/images/home.png'),fullPage:true});
   await page.getByLabel('视频链接',{exact:true}).fill(process.env.READVIDEO_LIVE_URL||'https://www.ted.com/talks/derek_sivers_how_to_start_a_movement');
-  await page.getByText('完整文章',{exact:true}).click();await page.getByRole('button',{name:'提取并生成',exact:true}).click();
+  await page.getByText('完整文章',{exact:true}).click();
+  await page.getByLabel('文章篇幅',{exact:true}).selectOption(process.env.READVIDEO_LIVE_LENGTH||'medium');
+  await page.getByRole('button',{name:'提取并生成',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('#generate').disabled,{},{timeout:240000});
   const failure=await page.locator('#error').evaluate(el=>el.hidden?'':el.textContent);
   if(failure)throw new Error(failure);
