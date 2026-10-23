@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="输入视频链接，提取字幕，用自己的 API 生成速读摘要和文章。"
+    />
+    <title>readvideo — 把视频，读成文章。</title>
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="readvideo 首页"
+        ><svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M6 6h14a6 6 0 0 1 6 6v14H12a6 6 0 0 1-6-6z" />
+          <path d="m14 11 7 5-7 5z" /></svg
+        ><span>read<strong>video</strong></span></a
+      >
+      <div class="header-right">
+        <span class="local-label"><i></i>在你的设备上运行</span
+        ><button id="settings-open" class="quiet" aria-label="API 配置">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 17h16" />
+            <circle cx="9" cy="7" r="3" />
+            <circle cx="15" cy="17" r="3" /></svg
+          >API 配置
+        </button>
+      </div>
+    </header>
+    <main>
+      <section class="intro">
+        <span class="eyebrow">LESS WATCHING. MORE UNDERSTANDING.</span>
+        <h1>把视频，<span>读成文章。</span></h1>
+        <p>贴一个链接，提取字幕，留住真正重要的内容。</p>
+      </section>
+      <section class="entry" aria-label="视频处理">
+        <form id="link-form">
+          <div class="url-row">
+            <span class="link-icon" aria-hidden="true">↗</span
+            ><input
+              id="video-url"
+              type="url"
+              aria-label="视频链接"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="粘贴 YouTube、Bilibili 或其他视频链接…"
+              required
+            /><button id="generate" class="primary" type="submit">
+              提取并生成 <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <div class="entry-options">
+            <div class="mode-control" aria-label="生成形式">
+              <label
+                ><input type="radio" name="mode" value="brief" checked /><span
+                  >速读摘要</span
+                ></label
+              ><label
+                ><input type="radio" name="mode" value="article" /><span
+                  >完整文章</span
+                ></label
+              >
+            </div>
+            <span class="option-divider"></span
+            ><label class="language-select"
+              ><span>字幕</span
+              ><select id="caption-language" aria-label="字幕语言">
+                <option value="auto">原语言优先</option>
+                <option value="zh">中文优先</option>
+                <option value="en">英文优先</option>
+              </select></label
+            ><button id="extract-only" class="text-button" type="button">
+              仅提取字幕
+            </button>
+          </div>
+        </form>
+        <div class="under-input">
+          <span>由 yt-dlp 提取已有字幕，不下载视频</span
+          ><button id="import-open" class="text-button" type="button">
+            或导入字幕文件 <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </section>
+      <section
+        id="progress-panel"
+        class="progress-panel"
+        aria-live="polite"
+        hidden
+      >
+        <span class="spinner" aria-hidden="true"></span>
+        <div>
+          <span id="progress-text">正在准备…</span
+          ><progress id="progress-meter" max="100" value="5"></progress>
+        </div>
+        <span id="elapsed">0s</span>
+      </section>
+      <div id="error" class="error" role="alert" hidden></div>
+      <section id="reading" class="reading" hidden>
+        <div class="source-card">
+          <span class="source-icon" aria-hidden="true">▷</span>
+          <div>
+            <h2 id="source-title"></h2>
+            <p id="source-meta"></p>
+          </div>
+          <a
+            id="source-link"
+            class="source-link"
+            target="_blank"
+            rel="noopener noreferrer"
+            >查看原视频 ↗</a
+          >
+        </div>
+        <div class="reading-toolbar">
+          <div class="tabs" role="tablist" aria-label="阅读内容">
+            <button
+              class="tab active"
+              id="notes-tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="notes-panel"
+            >
+              阅读笔记</button
+            ><button
+              class="tab"
+              id="transcript-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="transcript-panel"
+            >
+              原字幕 <span id="cue-count">0</span>
+            </button>
+          </div>
+          <div class="reading-actions">
+            <button id="copy" class="quiet" aria-label="复制内容" disabled>
+              复制</button
+            ><button
+              id="download"
+              class="quiet"
+              aria-label="导出 Markdown"
+              disabled
+            >
+              导出 <span aria-hidden="true">↓</span>
+            </button>
+          </div>
+        </div>
+        <div id="notes-panel" role="tabpanel" aria-labelledby="notes-tab">
+          <div id="article" class="article"></div>
+          <div id="notes-empty" class="notes-empty">
+            <span aria-hidden="true">✧</span>
+            <h3>字幕已准备好。</h3>
+            <p>用自己的 API，把它整理成更易读的笔记。</p>
+            <button id="summarize-current" class="secondary">
+              根据字幕生成 →
+            </button>
+          </div>
+        </div>
+        <div
+          id="transcript-panel"
+          role="tabpanel"
+          aria-labelledby="transcript-tab"
+          hidden
+        >
+          <div class="transcript-header">
+            <span>保留原始时间点，方便回看核对。</span
+            ><input
+              id="search"
+              type="search"
+              aria-label="搜索字幕"
+              placeholder="搜索字幕…"
+            />
+          </div>
+          <div id="transcript" class="transcript"></div>
+        </div>
+        <footer class="reading-footer">
+          <span id="result-meta">内容基于字幕，关键事实建议回看核对。</span
+          ><span id="reading-time"></span>
+        </footer>
+      </section>
+      <section id="empty" class="empty">
+        <div class="paper-stack" aria-hidden="true">
+          <div class="paper-back"></div>
+          <div class="paper-front">
+            <span class="paper-play">▷</span><i></i><i></i><i></i
+            ><span class="paper-time">12:48 → 3 min</span>
+          </div>
+        </div>
+        <h2>好内容，换一种读法。</h2>
+        <p>课程、访谈、技术分享。<br />把观看的时间，留给思考。</p>
+      </section>
+      <footer class="page-footer">
+        <span>readvideo <i>·</i> 字幕优先，内容为本。</span
+        ><span id="provider-label">使用你自己的 API</span>
+      </footer>
+    </main>
+    <input
+      id="subtitle-file"
+      type="file"
+      accept=".srt,.vtt,.json,.json3"
+      hidden
+    />
+    <dialog id="settings">
+      <form id="settings-form">
+        <div class="drawer-heading">
+          <div>
+            <span class="eyebrow">MAKE IT YOURS</span>
+            <h2>连接你的模型。</h2>
+          </div>
+          <button
+            type="button"
+            class="close"
+            id="settings-close"
+            aria-label="关闭配置"
+          >
+            ×
+          </button>
+        </div>
+        <p class="drawer-description">
+          选择服务商，填入自己的 API。字幕只会在你生成内容时发送给所选服务。
+        </p>
+        <label class="field"
+          >服务商<select id="provider" aria-label="服务商">
+            <option value="deepseek">DeepSeek</option>
+            <option value="gemini">Gemini · 可选免费额度</option>
+            <option value="custom">自定义 API</option>
+          </select></label
+        >
+        <p id="provider-note" class="field-note"></p>
+        <label class="field"
+          >API Key<input
+            id="api-key"
+            type="password"
+            aria-label="API Key"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="仅在当前页面内存使用"
+        /></label>
+        <p id="key-note" class="field-note">
+          不会写入浏览器存储、项目文件或导出文章。
+        </p>
+        <details id="advanced">
+          <summary>高级设置</summary>
+          <label class="field"
+            >Base URL<input
+              id="base-url"
+              type="url"
+              aria-label="Base URL"
+              autocomplete="off"
+              spellcheck="false"
+              required /></label
+          ><label class="field"
+            >模型名称<input
+              id="model"
+              aria-label="模型名称"
+              autocomplete="off"
+              spellcheck="false"
+              required /></label
+          ><label class="field"
+            >输出语言<select id="output-language" aria-label="输出语言">
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select></label
+          >
+        </details>
+        <div
+          id="connection-result"
+          class="connection-result"
+          role="status"
+          hidden
+        ></div>
+        <div class="drawer-actions">
+          <button id="test-connection" type="button" class="secondary">
+            测试连接</button
+          ><button class="primary" type="submit" aria-label="保存配置">
+            保存配置
+          </button>
+        </div>
+        <div class="privacy-box">
+          <span>◈</span>
+          <p>
+            只保存服务地址、模型和语言偏好。<br /><strong
+              >Key 不落盘，刷新页面后需要重新填写。</strong
+            >长字幕会分段生成，可能产生多次 API 调用。
+          </p>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
