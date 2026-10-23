@@ -17,6 +17,8 @@ const server = spawn(
   { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
 );
 let browser;
+let startupError = '';
+server.stderr.on('data', data => { startupError += data.toString(); });
 const results = [];
 const step = async (name, fn) => {
   await fn();
@@ -26,10 +28,11 @@ const step = async (name, fn) => {
 try {
   await Promise.race([
     once(server.stdout, "data"),
+    once(server, "exit").then(([code]) => { throw new Error(`Fixture server exited (${code}): ${startupError}`); }),
     new Promise((_, reject) =>
       setTimeout(
-        () => reject(new Error("Fixture server timeout")),
-        6000,
+        () => reject(new Error(`Fixture server startup timeout: ${startupError}`)),
+        30000,
       ).unref(),
     ),
   ]);

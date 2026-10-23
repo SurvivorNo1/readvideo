@@ -29,3 +29,5 @@ The development machine separately verified a public TED video, “How to start 
 Live outputs and full extracted captions stay in ignored `.qa/`, not public test fixtures. The screenshots in the README are captured from the running application. Free-tier Gemini and other custom providers are configurable but have not been live-tested using a credential in this development session.
 
 The successful live TED/DeepSeek article above was generated with v0.1. A v0.2 detailed-article live rerun stopped at video extraction due to a network/platform read failure. It is not reported as a successful v0.2 generation. The subsequent network-enabled server restart was blocked by the execution environment's automatic approval quota, not by a test assertion. Length and correction changes are covered by the deterministic tests above; no claim of completed external factual verification is made.
+
+The first v0.2 hosted browser run hit the fixture startup deadline before opening a browser. Startup now reports child-process errors and allows a 30-second cold start on Windows runners; this changes test infrastructure, not application behavior.
