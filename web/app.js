@@ -6,7 +6,7 @@ import {
   resolveConfig,
   stamp,
 } from "./core.mjs";
-import { discoverSource } from "./source.mjs";
+import { discoverSource, embeddedPlayer } from "./source.mjs";
 import { ReadingSession } from "./session.mjs";
 const $ = (selector) => document.querySelector(selector);
 const make = (tag, cls, text) => {
@@ -254,6 +254,28 @@ function updateReading() {
   renderTranscript();
   updateExports();
 }
+let currentPlayer = null,
+  preferOtherTab = false;
+function preparePlayer(url) {
+  currentPlayer = embeddedPlayer(url);
+  preferOtherTab = false;
+  $("#inline-player").hidden = !currentPlayer;
+  const frame = $("#video-frame");
+  if (currentPlayer) {
+    if (frame.src !== currentPlayer.url) frame.src = currentPlayer.url;
+    frame.title = currentPlayer.platform + " 视频播放器";
+    $("#open-video").textContent = "原站播放 ↗";
+    $("#capture-start").textContent = "授权本页音频并转写";
+  } else {
+    frame.removeAttribute("src");
+    $("#open-video").textContent = "① 打开原视频 ↗";
+    $("#capture-start").textContent = "② 授权音频并开始";
+  }
+}
+$("#open-video").addEventListener("click", () => {
+  preferOtherTab = true;
+  $("#capture-start").textContent = "② 授权音频并开始";
+});
 let session = null,
   generateAfterCapture = true;
 async function generateCurrent() {
@@ -299,6 +321,7 @@ function configureSession(url) {
   result = null;
   session = new ReadingSession({
     url,
+    sameTab: !!currentPlayer && !preferOtherTab,
     language: $("#caption-language").value,
     backend: $("#asr-backend").value,
     offset: Math.max(0, Number($("#capture-offset").value) || 0),
@@ -373,6 +396,8 @@ async function run(generate = true) {
       lastURL = url;
       result = null;
       $("#capture-panel").hidden = true;
+      $("#video-frame").removeAttribute("src");
+      currentPlayer = null;
       updateReading();
       if (generate) await generateCurrent();
       else selectTab("transcript");
@@ -380,6 +405,7 @@ async function run(generate = true) {
       $("#capture-panel").hidden = false;
       $("#recovery-actions").hidden = true;
       $("#open-video").href = url;
+      preparePlayer(url);
       $("#capture-start").disabled = false;
       if (source.kind === "media") {
         $("#capture-start").hidden = true;
@@ -405,8 +431,9 @@ async function run(generate = true) {
       } else {
         $("#capture-start").hidden = false;
         $("#open-video").hidden = false;
-        $("#capture-help").textContent =
-          "此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。转写随播放进行，音频不上传 ASR 服务。";
+        $("#capture-help").textContent = currentPlayer
+          ? "可以在本页播放视频。先授权共享当前 readvideo 标签页音频，再播放下方视频；转写在浏览器内进行。如果播放器受平台限制，请改用原站播放，并共享原视频标签页音频。"
+          : "此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。转写随播放进行，音频不上传 ASR 服务。";
         $("#capture-status").textContent =
           "字幕不可直接读取，准备好后授权音频。请完整播放，不中途跳转；不会读取麦克风。";
       }
@@ -651,6 +678,9 @@ $("#subtitle-file").addEventListener("change", async (event) => {
     session?.close();
     session = null;
     $("#capture-panel").hidden = true;
+    $("#video-frame").removeAttribute("src");
+    currentPlayer = null;
+    preferOtherTab = false;
     transcript = {
       segments: parseCaptions(await file.text(), format),
       title: file.name.replace(/\.[^.]+$/, ""),

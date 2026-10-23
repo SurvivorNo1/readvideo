@@ -1,4 +1,42 @@
 import { parseCaptions, windowAudio } from "./core.mjs";
+export function embeddedPlayer(value) {
+  const url = sourceURL(value),
+    host = url.hostname.toLowerCase();
+  if (
+    [
+      "youtube.com",
+      "www.youtube.com",
+      "m.youtube.com",
+      "youtu.be",
+      "www.youtu.be",
+    ].includes(host)
+  ) {
+    const id = host.endsWith("youtu.be")
+      ? url.pathname.slice(1).split("/")[0]
+      : url.searchParams.get("v") ||
+        url.pathname.match(/^\/(?:embed|shorts)\/([^/]+)/)?.[1];
+    if (!/^[\w-]{11}$/.test(id || "")) return null;
+    return {
+      platform: "YouTube",
+      url:
+        "https://www.youtube-nocookie.com/embed/" +
+        id +
+        "?playsinline=1&autoplay=0",
+    };
+  }
+  if (["bilibili.com", "www.bilibili.com", "m.bilibili.com"].includes(host)) {
+    const id = url.pathname.match(/^\/video\/(BV[\w]{10}|av\d+)(?:\/|$)/)?.[1];
+    if (!id) return null;
+    return {
+      platform: "Bilibili",
+      url:
+        "https://player.bilibili.com/player.html?" +
+        (id.startsWith("av") ? "aid=" + id.slice(2) : "bvid=" + id) +
+        "&autoplay=0",
+    };
+  }
+  return null;
+}
 export function sourceURL(value) {
   let url;
   try {

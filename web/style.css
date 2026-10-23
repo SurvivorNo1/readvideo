@@ -1699,3 +1699,22 @@ dialog {
     max-width: 185px;
   }
 }
+
+.inline-player {
+  margin: 20px 0;
+}
+.inline-player[hidden] {
+  display: none;
+}
+.inline-player iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/9;
+  border: 0;
+  border-radius: 12px;
+  background: #f5f5f7;
+}
+.inline-player p {
+  font-size: 11px !important;
+  color: #86868b !important;
+}

@@ -12,6 +12,7 @@ export class ReadingSession {
     language = "auto",
     backend = "auto",
     offset = 0,
+    sameTab = false,
     onTranscript = () => {},
     onStatus = () => {},
     onProgress = () => {},
@@ -21,6 +22,7 @@ export class ReadingSession {
     this.url = url;
     this.language = language;
     this.offset = offset;
+    this.sameTab = sameTab;
     this.onStatus = onStatus;
     this.onTranscript = onTranscript;
     this.onFinished = onFinished;
@@ -102,7 +104,7 @@ export class ReadingSession {
     );
     this.capture.onEnded = () => this.finish().catch(() => {});
     try {
-      await this.capture.start();
+      await this.capture.start(undefined, this.sameTab);
       this.modelReady = this.asr.load();
       this.modelReady.catch(() => {});
       this.status("正在准备模型，可以开始播放视频。采集中的音频会排队保留。");

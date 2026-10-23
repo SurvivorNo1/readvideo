@@ -1,0 +1,40 @@
+[
+  {
+    "platform": "YouTube",
+    "url": "https://www.youtube.com/watch?v=V74AxCqOTvg",
+    "testedAt": "2026-10-23T16:17:10.476Z",
+    "permissionGranted": false,
+    "captureTranscribed": false,
+    "embeddedURL": "https://www.youtube-nocookie.com/embed/V74AxCqOTvg?playsinline=1&autoplay=0",
+    "hasVideoElement": 1,
+    "playRequest": "playback-start-timeout",
+    "media": {
+      "duration": null,
+      "readyState": 0,
+      "paused": false,
+      "error": null,
+      "clockAdvanced": false
+    },
+    "playerText": "How to start a movement | Derek Sivers\nTED\nTED\n2790万位订阅者\n前往平台观看：",
+    "status": "embedded-page-loaded-playback-unverified"
+  },
+  {
+    "platform": "Bilibili",
+    "url": "https://www.bilibili.com/video/av728835116/",
+    "testedAt": "2026-10-23T16:17:30.846Z",
+    "permissionGranted": false,
+    "captureTranscribed": false,
+    "embeddedURL": "https://player.bilibili.com/player.html?aid=728835116&autoplay=0",
+    "hasVideoElement": 1,
+    "playRequest": "accepted",
+    "media": {
+      "duration": 118.22904761904763,
+      "readyState": 4,
+      "paused": false,
+      "error": null,
+      "clockAdvanced": true
+    },
+    "playerText": "精妙到不可思议！2分钟科普：人是如何听到声音的？\nYouTube精选字幕组\n关注\n1293\n50\n分享\n更多\n00:06 / 01:59\n一起去哔哩哔哩发送弹幕吧！\n自动\n倍速\n进入哔哩哔哩，观看更高清",
+    "status": "embedded-playback-clock-advanced-no-capture-claim"
+  }
+]

@@ -15,6 +15,20 @@
 
 ## 待完成的真实授权步骤
 
+### 同页播放器复测（2026-10-24）
+
+开发预览中的真实 Chrome 155 另行打开了官方内嵌播放器，没有视频或模型测试适配器，也未自动批准音频采集：
+
+- Bilibili 案例：视频时长约 118.23 秒，播放器 `readyState=4`，请求播放后计时正常推进；同页播放已观察通过。
+- YouTube 案例：内嵌页与缩略图出现，但本轮播放启动在 10 秒内未完成，计时未推进；只记为“未确认播放”，不能据此断言所有用户或所有 YouTube 视频都禁止内嵌。
+- 两者都未获得真实音频授权，因此没有把同页播放器测试记为平台音频转写通过。原站播放仍是备用操作。
+
+[原始播放器观察](evaluation-data/embedded-player-results.json)
+
+![Bilibili 实际同页播放](evaluation-images/bilibili-inline-playback.png)
+
+![YouTube 本轮未确认播放](evaluation-images/youtube-inline-unverified.png)
+
 由用户在浏览器选择目标视频标签页，并勾选共享音频；完整采集指定片段，等待队列结束，保存实际转写。记录采集起点、播放速度、素材时长、首次模型准备、识别耗时与队列等待。没有操作实际授权前，不发布“Bilibili/YouTube 一键转写已通过”的结论。
 
 ## 性能边界

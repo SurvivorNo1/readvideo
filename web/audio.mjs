@@ -153,6 +153,15 @@ export class BrowserASR {
     this.pending.clear();
   }
 }
+export function captureOptions(sameTab = false) {
+  return {
+    video: true,
+    audio: { suppressLocalAudioPlayback: false, restrictOwnAudio: false },
+    preferCurrentTab: sameTab,
+    selfBrowserSurface: sameTab ? "include" : "exclude",
+    systemAudio: "exclude",
+  };
+}
 export class TabCapture {
   constructor(onWindow, onElapsed = () => {}) {
     this.onWindow = onWindow;
@@ -164,6 +173,7 @@ export class TabCapture {
   async start(
     getDisplayMedia = (options) =>
       navigator.mediaDevices.getDisplayMedia(options),
+    sameTab = false,
   ) {
     if (!navigator.mediaDevices?.getDisplayMedia)
       throw Error(
@@ -171,13 +181,7 @@ export class TabCapture {
       );
     // This must happen directly inside the user's click, before model loading.
     try {
-      this.stream = await getDisplayMedia({
-        video: true,
-        audio: true,
-        preferCurrentTab: false,
-        selfBrowserSurface: "exclude",
-        systemAudio: "exclude",
-      });
+      this.stream = await getDisplayMedia(captureOptions(sameTab));
     } catch {
       throw Error(
         "音频共享未获授权。未开始采集，可以重新点击并选择视频标签页。",

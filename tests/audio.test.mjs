@@ -5,7 +5,16 @@ import {
   SerialQueue,
   wavBlob,
   BrowserASR,
+  captureOptions,
 } from "../web/audio.mjs";
+
+test("embedded playback requests this tab without filtering its own audio", () => {
+  const options = captureOptions(true);
+  assert.equal(options.preferCurrentTab, true);
+  assert.equal(options.selfBrowserSurface, "include");
+  assert.equal(options.audio.restrictOwnAudio, false);
+  assert.equal(captureOptions(false).selfBrowserSurface, "exclude");
+});
 test("streaming windows have same coverage as whole audio, including stop tail", () => {
   const chunker = new AudioChunker(16000);
   const jobs = [];

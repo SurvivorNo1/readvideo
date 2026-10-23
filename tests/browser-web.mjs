@@ -237,6 +237,65 @@ try {
     },
   );
   await step(
+    "YouTube playback stays on the page and offers this-tab audio consent",
+    async () => {
+      let popups = 0;
+      const onPopup = () => popups++;
+      page.on("popup", onPopup);
+      await page.route("https://www.youtube.com/watch?**", (r) => r.abort());
+      await page.route("https://www.youtube-nocookie.com/embed/**", (r) =>
+        r.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: "<p>Explicit embedded-player fixture; no real playback claim.</p>",
+        }),
+      );
+      await page
+        .getByLabel("视频链接", { exact: true })
+        .fill("https://www.youtube.com/watch?v=V74AxCqOTvg");
+      await page
+        .getByRole("button", { name: "仅读取字幕", exact: true })
+        .click();
+      await page.getByTitle("YouTube 视频播放器", { exact: true }).waitFor();
+      assert.equal(popups, 0);
+      await page.evaluate(() => {
+        navigator.mediaDevices.getDisplayMedia = async (options) => {
+          window.captureRequest = options;
+          throw new DOMException("Denied", "NotAllowedError");
+        };
+      });
+      await page
+        .getByRole("button", { name: "授权本页音频并转写", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.equal(
+        await page.evaluate(() => window.captureRequest.preferCurrentTab),
+        true,
+      );
+      assert.equal(
+        await page.evaluate(() => window.captureRequest.audio.restrictOwnAudio),
+        false,
+      );
+      const popup = page.waitForEvent("popup");
+      await page.locator("#open-video").click();
+      await (await popup).close();
+      assert.equal(popups, 1);
+      page.off("popup", onPopup);
+      await page
+        .getByRole("button", { name: "② 授权音频并开始", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.equal(
+        await page.evaluate(() => window.captureRequest.preferCurrentTab),
+        false,
+      );
+    },
+  );
+  await step(
     "CPU capture adapter keeps the stop tail through the actual AudioWorklet",
     async () => {
       await page.route("**/asr-worker.mjs", (r) =>

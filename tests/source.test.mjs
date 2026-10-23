@@ -1,6 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverSource, sourceURL } from "../web/source.mjs";
+import { discoverSource, sourceURL, embeddedPlayer } from "../web/source.mjs";
+test("same-page players accept only recognized public platform URLs", () => {
+  assert.equal(
+    new URL(embeddedPlayer("https://www.youtube.com/watch?v=V74AxCqOTvg").url)
+      .hostname,
+    "www.youtube-nocookie.com",
+  );
+  assert.match(
+    embeddedPlayer("https://youtu.be/V74AxCqOTvg").url,
+    /embed\/V74AxCqOTvg/,
+  );
+  assert.match(
+    embeddedPlayer("https://www.bilibili.com/video/av728835116/").url,
+    /aid=728835116/,
+  );
+  assert.match(
+    embeddedPlayer("https://www.bilibili.com/video/BV1xx411c7mD/").url,
+    /bvid=BV1xx411c7mD/,
+  );
+  assert.equal(
+    embeddedPlayer("https://youtube.com.evil.example/watch?v=V74AxCqOTvg"),
+    null,
+  );
+  assert.equal(embeddedPlayer("https://www.youtube.com/watch?v=bad"), null);
+});
 test("readable subtitle links take priority over model inference", async () => {
   const result = await discoverSource(
     "https://example.com/subtitle.vtt",

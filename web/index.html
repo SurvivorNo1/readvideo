@@ -112,6 +112,18 @@
           此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。音频在浏览器内转写，不上传
           ASR 服务。
         </p>
+        <div id="inline-player" class="inline-player" hidden>
+          <iframe
+            id="video-frame"
+            title="视频播放器"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen
+          ></iframe>
+          <p>
+            先授权本页音频，再播放视频。可在播放器中选择其支持的倍速；播放受限时使用“原站播放”。倍速会影响时间点与识别质量，仍需实际核对。
+          </p>
+        </div>
         <div class="capture-actions">
           <a
             id="open-video"

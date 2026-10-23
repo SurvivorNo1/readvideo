@@ -10,6 +10,8 @@ Unit tests cover resampling, full window coverage and stop tail, overlap/timesta
 
 The 12 deterministic browser scenarios cover static initialization without /api/, captions skipping ASR, four depths, safe model rendering, full export despite filtering, key non-persistence, explicit consent routing, denied/no-audio capture, stopping tracks, actual AudioWorklet processing of a synthetic stream with an explicitly mocked model Worker, subtitle import and mobile overflow. These do not claim a real permission-picker interaction or real model inference.
 
+The inline-player change adds recognized-domain embed validation and same-tab audio-constraint tests before implementation, plus a browser regression for showing YouTube inline without opening a popup, requesting current-tab audio and retaining an explicit original-site fallback. Current totals are 18 unit tests and 13 browser scenarios. Real embed playback observations are separate in platform-evaluation.md; actual platform-audio authorization remains unverified.
+
 ## Real browser CPU inference
 
 The opt-in tests/asr-live.mjs ran in real desktop Chrome with CPU forced, using actual Transformers.js 3.8.1 and the onnx-community/whisper-tiny quantized model. No adapters and no application backend were used. It downloaded the public JFK sample from the Transformers.js documentation dataset and recognized a sentence containing “country.” The observed result contained one timestamped cue and 111 displayed characters. Screenshot: docs/images/browser-asr.png. Raw evidence remains in ignored .qa/asr-live-result.json.
