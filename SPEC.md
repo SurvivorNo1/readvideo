@@ -1,41 +1,17 @@
-# readvideo — v0.1 behavior contract
+# readvideo browser-only specification (v0.3)
 
-Status: implementation begins after the first failing test run.
+This supersedes the local Python runtime in SPEC.md. The approved interface remains. No application server, Python, extension, or ASR cloud API is required. The production artifact is a static GitHub Pages website with a working `/app/` application and Chinese/English product pages.
 
-## Product
+## Behavior contracts, before implementation
 
-A single, elegant reading page. Paste a video link, extract existing captions using yt-dlp, and turn those captions into either a concise summary or a readable article using a user-configured API. No Ollama, account system, video download, or invented transcription.
+- W1: Paste an HTTP(S) video link, open it in another tab, explicitly authorize tab audio through the browser's own picker, play the video, stop when finished, drain the ASR queue, then generate an article using the user's API. Captured audio never goes to an ASR service. Direct CORS-enabled media/subtitle links and subtitle imports are additional routes.
+- W2: Explain in the capture panel that sharing must include audio, capture follows playback, the user should start from the beginning, pauses/seeks/ads affect results, and timestamps are capture-relative unless a source offset is supplied. Never imply consent grants access to the entire original audio file. No microphone fallback or implicit recording. End all tracks and close audio contexts on stop/error/pagehide.
+- W3: Whisper tiny multilingual runs in a module Worker using pinned Transformers.js 3.8.1 and ONNX weights from Hugging Face. Model code and weights load only on demand and may be cached; display download/setup/inference stages. Request WebGPU when available; recover to WASM/CPU if GPU initialization or inference fails, retaining the same chunk. User can force CPU. On non-isolated Pages, WASM uses one thread; audio processing/ASR/UI are separate workers/threads and GPU is optional.
+- W4: An AudioWorklet collects mono PCM without main-thread audio callbacks. Resample to 16 kHz; process ordered 24-second windows with two seconds of context. Preserve capture-relative timestamps, clip overlap at ownership boundaries, retain the final short chunk. Silence need not create invented text. Queue length and pending seconds are visible. No unlimited GPU/model worker pool; retain audio until acknowledged. At a bounded 20-minute pending-audio limit stop capture explicitly, then drain all queued audio. An ASR failure preserves earlier text and the failed job; provide retry on CPU or WAV download for recovery. Never silently drop audio.
+- W5: Caption text can be viewed/copied/exported in full without an LLM key. Search filters display only. Imports remain available. Mark partial and failed captures; never label them complete. Do not auto-generate after a transcription failure.
+- W6: Browser-direct HTTPS Chat Completions calls with a user-entered memory-only key. No embedded key, proxy, or key persistence. Explain text goes to the selected provider on generation and custom services must allow browser CORS. Preserve four article lengths, language, timestamp grounding, correction/uncertainty rules, all-chunk synthesis and explicit limits. Never reflect provider errors/credentials in UI.
+- W7: Separate actual ASR smoke tests from deterministic adapters. Verify a public spoken audio sample with a real browser WASM model; CPU is required acceptance, WebGPU acceleration may remain environment-dependent. Test no-audio/denied capture, queue stop/drain, no lost final chunk, CPU fallback, metadata/exports, safe rendering, all four depths and no `/api/` backend requests. No assertion that mocked capture proves the browser's picker or source-site policies.
 
-Visual direction requested by the user: Apple-inspired restraint, white and light-gray surfaces, a blue accent, generous spacing, clear system typography. Keep the main operation to paste → generate. Show provider/key first and disclose advanced settings only when needed.
+## Product limits
 
-The initial app runs on the user's computer with a loopback-only Python backend. Static hosting alone cannot execute yt-dlp. Supported sites are the ones yt-dlp can currently extract; captions, authentication and network restrictions still vary by video.
-
-## Acceptance contracts
-
-- **A1 — Extract:** an HTTP(S) video link yields metadata and timestamped caption segments. Prefer the requested language and authored subtitles; automatic captions are a fallback. Download no video or audio. Reject playlist-only results, empty captions, private-network URLs and unsupported subtitle formats with actionable messages.
-- **A2 — Read:** normalize VTT, SRT, YouTube JSON3 and Bilibili subtitle JSON; remove rolling-caption duplication while retaining time references. Display the transcript even when no LLM key is configured. Support importing a subtitle file as a fallback.
-- **A3 — Generate:** summary and article are separate user choices. Ground output in supplied captions, keep source timestamps, and do not pretend to have watched images or audio. Split long transcripts into bounded chunks and synthesize all chunks; never silently truncate input. Surface API errors and empty responses.
-- **A4 — Configure:** DeepSeek, Gemini and a custom OpenAI-compatible HTTPS endpoint. Editable model and API key. A cloud free tier is optional and provider-dependent; no claim that DeepSeek or all API use is free. A connection check sends a small real request.
-- **A5 — Protect keys:** keys exist only in current browser/backend memory, never in localStorage, source, files, exception output, screenshots, history exports or Git. An injected debug key can only be sent to the official DeepSeek endpoint. Never forward it to a custom base URL. Do not follow API redirects with credentials.
-- **A6 — Export:** copy or download Markdown containing the article, source link and metadata, never credentials. Timestamp links let the reader revisit the original source.
-- **A7 — UI:** one page, one primary link input, a compact summary/article selector, a readable output area, a transcript tab and a configuration drawer. Show actual extraction/generation stages. Include clear empty, loading and failure states. Responsive at 390 px; keyboard focus visible; respect reduced motion.
-- **A8 — Honest validation:** deterministic tests cover parsing, deduplication, chunking, configuration boundaries, error redaction, HTTP endpoints and unsafe UI text. Real video and DeepSeek smoke tests are separate, explicitly reported and never disguised as mocked success.
-
-## v0.2 additions — agreed before implementation
-
-- **A9 — Complete captions:** show every normalized cue of the selected subtitle track, with full-track counts. Search filters the view only; copy/download always include every cue, including the final cue. Caption-only mode needs no LLM key. Explicit extraction limits must raise errors rather than truncate. This means the complete available track, not speech recognition or every language track.
-- **A10 — Article length:** retain quick summary and add an article-length control with short (300–500 Chinese characters / 200–350 English words), medium (800–1,500 / 600–1,000), long (1,800–3,000 / 1,200–2,000), detailed (3,000–5,000 / 2,000–3,500). These are targets constrained by source density, never promises to fabricate enough content. Preserve selection through the API and in result metadata. Reject invalid lengths before starting a job. All multi-chunk paths use the same chosen final length and a sufficient output budget.
-- **A11 — Editorial correction:** write an actual coherent article about the source subject, not instructions about writing an article. Correct only obvious caption errors supported by context, punctuation and broken sentences. Preserve numbers, units, negation and attribution. Mark uncertain names/terms as uncertain; distinguish a speaker's factual claim from verified fact. Never claim external fact checking without external sources. Include a brief correction/uncertainty note only when relevant; keep original captions unchanged.
-- **A12 — Bilingual Pages:** publish a responsive Chinese and English GitHub Pages product site, with working language links, real screenshots, repository and installation links, and an explicit local-runtime requirement. No fake hosted extraction/generation controls or embedded credentials.
-
-## Boundaries
-
-No speech recognition for videos without captions, cookies imported from browsers, paywall bypass, automatic publication, multi-user hosting, or persistent API-key storage in v0.1. Imported and extracted captions are sent to the selected API provider only when the user requests generation.
-
-## TDD sequence
-
-1. Write this contract and backend acceptance tests.
-2. Run them before implementation and preserve the expected failure result under ignored `.qa/`.
-3. Implement the minimum behavior to pass, then refactor with tests green.
-4. Add browser acceptance tests before wiring the UI; capture their initial failure.
-5. Verify real extraction and the authorized DeepSeek connection, then capture real screenshots and prepare a reviewable repository.
+Desktop Chrome/Edge with tab-audio sharing is the initial capture target. Lack of GPU changes speed, not the availability of CPU inference. Mobile browsers or devices without display-audio capture can use readable direct links/subtitle imports. Full long-form capture can be slow on CPU and initial model download can be significant. ASR can misrecognize; preserve and label the original machine transcript. The user controls source playback speed; no automatic cross-origin player control.

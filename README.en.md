@@ -1,61 +1,57 @@
 # readvideo
 
-**Turn videos into articles.** [中文](README.md) · [Website](https://survivorno1.github.io/readvideo/en.html)
+**Turn videos into articles. Browser-only. No local service.**
 
-Extract complete captions with [yt-dlp](https://github.com/yt-dlp/yt-dlp), then generate a quick summary or a short, medium, long or detailed article with your own API. One restrained page. MIT licensed. No Ollama.
+[Open the app](https://survivorno1.github.io/readvideo/app/) · [Website](https://survivorno1.github.io/readvideo/en.html) · [中文](README.md)
 
-![Real application](docs/images/home.png)
+![Real interface](docs/images/home.png)
 
-## Run locally
+Paste a link. Read accessible captions first. Otherwise explicitly share the video tab's audio and let Whisper transcribe inside the browser. Generate a short, medium, long or detailed article using your own API. No Python, yt-dlp, extension or local model service.
 
-Requires Python 3.10+. Windows: download the repository, extract it, double-click `run.bat`. Manual setup:
+## Workflow
 
-```sh
-git clone https://github.com/SurvivorNo1/readvideo.git
-cd readvideo
-python3 -m venv .venv
-# macOS / Linux:
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python app.py --open-browser
-# Windows:
-# .venv\Scripts\python -m pip install -r requirements.txt
-# .venv\Scripts\python app.py --open-browser
-```
+Configure your API, paste a link, choose a reading depth, then click **读取并生成**. Readable captions skip ASR. Otherwise open the video, click **授权音频并开始**, select the video tab and enable **Share tab audio**. Play from the intended start. Stop when finished; the app drains the remaining queue before generating. Search, copy or export the full transcript and article.
 
-Open [localhost:4174](http://127.0.0.1:4174). The backend listens only on loopback. Keep it running while using the app. GitHub Pages hosts a bilingual product website, not an extraction backend.
+Desktop Chrome / Edge is the initial tab-audio target. The interface is Chinese; generated text supports Chinese and English. Bilingual product pages are available. The earlier Python prototype has been removed; it remains in Git history.
 
-1. Open **API 配置** (API settings). Choose DeepSeek, Gemini or a custom Chat Completions endpoint. Enter your key and test the connection.
-2. Paste a video link. Choose quick summary or article, then an article length. Click **提取并生成** (extract and generate).
-3. Read, revisit timestamps, copy or export Markdown. **原字幕** shows the full selected track. Search only filters its display: exports include every cue.
+## Browser computation
 
-The app interface is currently Chinese. Generated content supports Chinese and English through the advanced output-language setting.
+- AudioWorklet captures mono PCM. A separate module Worker runs pinned Transformers.js 3.8.1 and Whisper tiny multilingual. Assets download on demand and can be browser-cached.
+- WebGPU is optional. GPU initialization/inference failures retry the same audio on CPU. Users can force CPU/WASM, verified using real speech.
+- Ordered 24-second windows retain context and the final short tail. Capture and recognition overlap. Pending time is visible; a 20-minute backlog stops capture and drains retained audio.
+- Failure retains queued audio and earlier text. Retry on CPU or download pending audio as a WAV. Partial transcripts are labelled.
+- GitHub Pages lacks cross-origin isolation headers, so WASM inference defaults to one thread. UI, audio and model processing are separated. Speed depends on the device; additional model workers are not advertised as unlimited acceleration.
 
-## Reading depths and correction
+## Articles and correction
 
-English article targets: short 200–350 words, medium 600–1,000, long 1,200–2,000, detailed 2,000–3,500. Chinese targets: 300–500, 800–1,500, 1,800–3,000, 3,000–5,000 characters. These are instructions, not enforced minimums: sparse source material stays shorter.
+English targets: short 200–350 words, medium 600–1,000, long 1,200–2,000, detailed 2,000–3,500. Chinese targets: 300–500, 800–1,500, 1,800–3,000 and 3,000–5,000 characters. Source density takes precedence; prompts forbid invented filler.
 
-Prompts focus on the actual topic and evidence. They instruct the model to correct clear transcription and punctuation errors, preserve numbers, units, negation and attribution, flag uncertain names/terms, and include relevant correction notes. Original captions remain unchanged. There is no external fact checking; model correction is fallible.
+Prompts focus on source evidence, correct clear contextual transcription/punctuation errors, preserve numbers, units, negation, attribution and limitations, and flag uncertain names/terms. Relevant correction notes are included by instruction. Original captions remain unchanged; this is not external fact checking. All chunks are processed, with explicit limits rather than silent truncation.
 
-Long transcripts are chunked and synthesized. Limits raise explicit errors rather than silently truncating the source. “Complete captions” means every normalized cue of the selected available track, not speech-to-text for videos with no captions or all language tracks.
+## Permissions and privacy
 
-## APIs and privacy
+Tab sharing grants access to playback, not a downloadable full audio track. The user operates the permission picker; no microphone fallback. Skipped passages cannot be recovered automatically. Capture timestamps and an optional source offset are affected by pauses, seeking, advertisements and speed changes. Captions on a platform are not necessarily CORS-readable by a webpage. Direct readable media links and subtitle imports are additional routes; this app does not bypass authentication or media protection.
 
-Keys remain in browser/backend runtime memory. They are not saved in browser persistent storage or exports. Generation sends captions to your chosen API provider. Caption-only extraction needs no LLM key. Gemini or a compatible provider may offer a free tier, subject to its own eligibility and limits; DeepSeek is not assumed free. Custom endpoints must use HTTPS. There are no shared credentials.
+Audio stays in the device browser. On requested generation, text and the memory-only key go directly to the selected HTTPS API. Keys never enter persistent browser storage or exports. Custom providers must support browser CORS. Free-tier access depends on the provider. There are no shared keys or Ollama dependency.
 
-Platform restrictions, login requirements and missing captions can prevent extraction. Import VTT, SRT, YouTube JSON3 or Bilibili JSON as a fallback. This version downloads no video/audio and performs no speech recognition.
+## Verification and development
 
-## Development
+Real Chrome CPU/WASM Whisper recognized the public JFK sample. Separately, a browser-direct DeepSeek call turned 64 cues into a 1,472-character Chinese article without a backend or proxy. See [verification](docs/verification.md). Synthetic test adapters do not prove the real permission picker or model; WebGPU is implemented but not the real acceptance path on this machine.
+
+Users open the hosted app. Contributors use Node.js 24+:
 
 ```sh
-python -m unittest discover -s tests -v
 npm ci
-# With installed Chrome:
-# Windows PowerShell: $env:READVIDEO_BROWSER_CHANNEL='chrome'
-# macOS / Linux: export READVIDEO_BROWSER_CHANNEL=chrome
+npm test
+# Installed Chrome; PowerShell:
+# $env:READVIDEO_BROWSER_CHANNEL='chrome'
 npm run test:browser
-python tools/build_site.py .qa/pages
+npm run dev
+npm run build
 ```
 
-See [SPEC.md](SPEC.md), [verification](docs/verification.md) and [contributing](CONTRIBUTING.md). Deterministic tests use explicit adapters; live API tests are opt-in and may incur costs. Free-tier Gemini has not been live-tested in this development session.
+The development server serves static files only. CI tests gate static Pages deployment. `npm run test:asr:live` explicitly downloads a model and public speech; ordinary CI excludes it. Real API tests require an authorized key and may incur costs.
 
-MIT license. yt-dlp remains an external dependency under its own license.
+[Specification](SPEC.md) · [Contributing](CONTRIBUTING.md) · [MIT](LICENSE)
+
+Uses [Transformers.js](https://github.com/huggingface/transformers.js) and [Whisper tiny ONNX](https://huggingface.co/onnx-community/whisper-tiny), each under its own license.

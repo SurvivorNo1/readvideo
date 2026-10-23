@@ -1,9 +1,9 @@
 # Contributing
 
-Start with the behavior contract in `SPEC.md`. For a bug, first add a failing example under `tests/`, implement the smallest fix, and rerun the relevant tests. Keep the page focused on paste → read; avoid adding account systems, dashboards or unrequested integrations.
+Read SPEC.md first. Production is browser-only. Do not introduce an application server, proxy, credential storage or hidden cloud ASR. Preserve the restrained single-page interface.
 
-Run `python -m unittest discover -s tests -v` for backend changes. For interface changes, use `npm ci`, install Chromium with `npx playwright install chromium`, then run `npm run test:browser`. Installed Chrome can be selected with `READVIDEO_BROWSER_CHANNEL=chrome`.
+Use Node.js 24+, `npm ci`, `npm test`, and `npm run test:browser` with installed Chrome (`READVIDEO_BROWSER_CHANNEL=chrome`). `npm run dev` serves static authoring files; `npm run build` packages the reviewed public allowlist. End users open the hosted app.
 
-The browser server is an explicit test fixture. Never describe its generated text as live extraction or model output. Real external checks must be opt-in, use an authorized credential, and state any failure or platform restriction.
+Write regression tests for data loss, capture lifecycle, routing, queueing and credential boundaries. Unit/adaptor tests cannot be reported as real model or browser-consent evidence. Run optional real ASR/API tests only with authorization. Never commit keys, full captured recordings, `.qa/` or browser profiles. Keep model code pinned and downloads on demand.
 
-Do not commit API keys, cookies, extracted third-party subtitles, local histories, `.venv/` or `.qa/`. Never print request headers or model-provider error bodies. Report subtitle bugs with a tiny original/redistributable fixture, format, timestamps and expected text. yt-dlp integration should use the subtitle downloader, not a general video download.
+Report browser/device, CPU or WebGPU mode, expected/observed behavior and reproduction steps, with credentials and private source material removed.

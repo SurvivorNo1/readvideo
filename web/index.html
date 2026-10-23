@@ -34,7 +34,7 @@
       <section class="intro">
         <span class="eyebrow">LESS WATCHING. MORE UNDERSTANDING.</span>
         <h1>把视频，<span>读成文章。</span></h1>
-        <p>贴一个链接，提取字幕，留住真正重要的内容。</p>
+        <p>贴一个链接，字幕优先，浏览器转写，留住真正重要的内容。</p>
       </section>
       <section class="entry" aria-label="视频处理">
         <form id="link-form">
@@ -49,7 +49,7 @@
               placeholder="粘贴 YouTube、Bilibili 或其他视频链接…"
               required
             /><button id="generate" class="primary" type="submit">
-              提取并生成 <span aria-hidden="true">→</span>
+              读取并生成 <span aria-hidden="true">→</span>
             </button>
           </div>
           <div class="entry-options">
@@ -74,16 +74,24 @@
                 <option value="en">英文优先</option>
               </select></label
             ><button id="extract-only" class="text-button" type="button">
-              仅提取字幕
+              仅读取字幕
             </button>
           </div>
         </form>
         <div class="under-input">
-          <span>由 yt-dlp 提取已有字幕，不下载视频</span
+          <span>字幕优先 · 无字幕时由浏览器转写 · 无需本地服务</span
           ><button id="import-open" class="text-button" type="button">
             或导入字幕文件 <span aria-hidden="true">↗</span>
           </button>
         </div>
+      </section>
+      <section id="capture-panel" class="capture-panel" hidden aria-label="浏览器音频转写">
+        <div class="capture-heading"><div><span class="eyebrow">IN YOUR BROWSER</span><h2>让浏览器，听懂这段视频。</h2></div><span id="engine-label" class="engine-label">GPU 可选 · 支持 CPU</span></div>
+        <p id="capture-help">此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。音频在浏览器内转写，不上传 ASR 服务。</p>
+        <div class="capture-actions"><a id="open-video" class="secondary" target="_blank" rel="noopener noreferrer">① 打开原视频 ↗</a><button id="capture-start" class="primary" type="button">② 授权音频并开始</button><button id="capture-stop" class="secondary" type="button" hidden>停止采集，完成转写</button></div>
+        <details class="capture-options"><summary>识别设置与时间点</summary><label>加速方式 <select id="asr-backend" aria-label="识别加速方式"><option value="auto">自动 · GPU 优先，CPU 备用</option><option value="cpu">CPU · 兼容模式</option></select></label><label>视频播放起点（秒） <input id="capture-offset" aria-label="视频播放起点" type="number" min="0" value="0" step="1"></label><p>首次使用需下载 Whisper 模型，之后复用浏览器缓存。转写随播放进行；暂停、跳转、广告和倍速会影响字幕时间，采集时间不等于可靠的原视频时间。无 GPU 也可以使用 CPU，但可能需要等待队列处理。</p></details>
+        <div id="capture-status" role="status" class="capture-status">准备好后再授权。不会读取麦克风。</div>
+        <div id="recovery-actions" class="capture-actions" hidden><button id="retry-cpu" class="secondary" type="button">用 CPU 重试待处理音频</button><button id="save-audio" class="quiet" type="button">下载待处理音频</button></div>
       </section>
       <section
         id="progress-panel"
@@ -131,7 +139,7 @@
               aria-selected="false"
               aria-controls="transcript-panel"
             >
-              原字幕 <span id="cue-count">0</span>
+              字幕全文 <span id="cue-count">0</span>
             </button>
           </div>
           <div class="reading-actions">

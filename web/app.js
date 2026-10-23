@@ -1,3 +1,6 @@
+import {PRESETS,parseCaptions,generateArticle,chatRequest,resolveConfig,stamp} from './core.mjs';
+import {discoverSource} from './source.mjs';
+import {ReadingSession} from './session.mjs';
 const $ = (selector) => document.querySelector(selector);
 const make = (tag, cls, text) => {
   const node = document.createElement(tag);
@@ -16,19 +19,6 @@ let bootstrap,
   toastTimer,
   activeTab = "notes";
 
-async function api(path, data) {
-  const response = await fetch(path, {
-    method: data ? "POST" : "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Readvideo-Token": bootstrap?.token || "",
-    },
-    ...(data ? { body: JSON.stringify(data) } : {}),
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "请求失败，请重试。");
-  return payload;
-}
 function toast(text) {
   clearTimeout(toastTimer);
   $("#toast").textContent = text;
@@ -60,16 +50,6 @@ function setBusy(value) {
 function progress(text, amount) {
   $("#progress-text").textContent = text;
   $("#progress-meter").value = amount;
-}
-async function waitJob(job, onProgress = progress) {
-  for (let count = 0; count < 900; count++) {
-    const state = await api("/api/jobs/" + encodeURIComponent(job.id));
-    onProgress(state.stage, state.progress);
-    if (state.status === "done") return state.result;
-    if (state.status === "error") throw new Error(state.error);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-  }
-  throw new Error("等待时间过长。后端任务可能仍在运行，请稍后重试。");
 }
 function time(seconds) {
   seconds = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -200,7 +180,7 @@ function renderTranscript() {
     root.append(row);
   }
   if (!matches) root.append(make("p", "cue-empty", "没有找到匹配的字幕。"));
-  $("#transcript-status").textContent = query
+  $("#transcript-status").textContent = transcript?.partial ? `转写未完成 · 已识别 ${transcript.segments.length} 条 · 导出会标明未完成` : query
     ? `匹配 ${matches} / ${transcript.segments.length} 条 · 复制与导出仍包含完整字幕`
     : `完整字幕 · 共 ${transcript?.segments.length || 0} 条 · 保留时间点，复制与导出包含全文`;
 }
@@ -225,13 +205,14 @@ function updateReading() {
   $("#empty").hidden = !!transcript;
   $("#reading").hidden = !transcript;
   if (!transcript) return;
-  $("#source-title").textContent = transcript.title;
+  $('#source-title').textContent = transcript.title;
+  if(transcript.source==='browser-asr') $('#source-title').textContent += transcript.partial ? ' · 转写未完成' : ' · 本次采集已转写';
   const duration = transcript.duration ? time(transcript.duration) : "";
   const chars = transcript.segments.reduce((n, s) => n + s.text.length, 0);
   $("#source-meta").textContent = [
     transcript.uploader,
     duration,
-    transcript.source === "subtitle-file"
+    transcript.source === "browser-asr" ? "浏览器 ASR · "+(transcript.timeline==="capture"?"采集相对时间":"音频时间") : transcript.source === "subtitle-file"
       ? "导入字幕"
       : (transcript.automatic ? "自动字幕" : "人工字幕") +
         " · " +
@@ -258,62 +239,85 @@ function updateReading() {
   renderTranscript();
   updateExports();
 }
+let session = null, generateAfterCapture = true;
 async function generateCurrent() {
-  const mode = document.querySelector("[name=mode]:checked").value;
-  const job = await api("/api/generate", {
-    transcript_id: transcript.transcript_id,
-    mode,
-    length: $("#article-length").value,
-    language: config.output_language,
-    config,
-  });
-  result = await waitJob(job);
-  updateReading();
-  selectTab("notes");
+  if (transcript?.partial) throw new Error('转写尚未完成，请处理剩余音频后生成文章。');
+  resolveConfig(config);
+  const mode = document.querySelector('[name=mode]:checked').value;
+  result = await generateArticle(transcript, config, {mode, length: $('#article-length').value, language:config.output_language}, progress);
+  updateReading(); selectTab('notes');
 }
-async function run(generate = true) {
-  if (busy || !bootstrap) return;
-  const url = $("#video-url").value.trim();
-  try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-  } catch {
-    showError(new Error("请粘贴有效的 HTTP(S) 视频链接，或导入字幕文件。"));
-    $("#video-url").focus();
-    return;
-  }
-  $("#error").hidden = true;
+function captionData(source) {
+  return {...source, uploader:'浏览器直接读取', duration:source.segments.at(-1)?.start || 0, partial:false};
+}
+async function afterTranscript() {
   setBusy(true);
-  try {
-    if (
-      !transcript ||
-      lastURL !== url ||
-      transcript.requested_language !== $("#caption-language").value
-    ) {
-      progress("正在读取视频信息", 5);
-      const job = await api("/api/extract", {
-        url,
-        language: $("#caption-language").value,
-      });
-      transcript = await waitJob(job);
-      transcript.requested_language = $("#caption-language").value;
-      lastURL = url;
-      result = null;
-      $("#search").value = "";
-      updateReading();
-    }
-    if (generate) {
-      await generateCurrent();
-    } else {
-      selectTab("transcript");
-    }
-  } catch (error) {
-    showError(error);
-    if (transcript) updateReading();
-  } finally {
-    setBusy(false);
-  }
+  try { if(generateAfterCapture) await generateCurrent(); else selectTab('transcript'); }
+  catch(error) { showError(error); if(!config.api_key) openSettings(); }
+  finally { setBusy(false); }
 }
+function configureSession(url) {
+  session?.close();
+  result=null;
+  session=new ReadingSession({url,language:$('#caption-language').value,backend:$('#asr-backend').value,offset:Math.max(0,Number($('#capture-offset').value)||0),
+    onTranscript:data=>{transcript=data;lastURL=url;updateReading();selectTab('transcript');},
+    onProgress:p=>{progress(p.message || (p.type==='download' ? '正在下载识别模型 · '+Math.round(p.progress||0)+'%' : '准备浏览器识别'),Math.round(p.progress||10));},
+    onStatus:state=>{
+      $('#engine-label').textContent=state.device==='webgpu'?'WebGPU 加速':state.device==='wasm'?'CPU / WASM':'GPU 可选 · CPU 可用';
+      $('#capture-status').textContent=(state.message || (state.error?'识别暂停，音频仍保留。':'音频在浏览器内处理。'))+` 已采集 ${stamp(state.elapsed)} · 待处理 ${stamp(state.pending)}`;
+      $('#recovery-actions').hidden=!state.error;
+      if(state.ended) $('#capture-stop').hidden=true;
+    },
+    onFinished:afterTranscript,
+    onError:error=>{showError(error);setBusy(false);$('#capture-stop').hidden=true;$('#capture-start').disabled=false;$('#recovery-actions').hidden=!session?.queue.jobs.length;}
+  });
+  transcript=session.transcript;lastURL=url;updateReading();selectTab('transcript');return session;
+}
+async function run(generate=true) {
+  if(busy) return;
+  const url=$('#video-url').value.trim(); generateAfterCapture=generate;
+  $('#error').hidden=true; setBusy(true);
+  try {
+    if(transcript && lastURL===url && !transcript.partial && transcript.requested_language===$('#caption-language').value) {
+      if(generate) await generateCurrent(); else selectTab('transcript'); return;
+    }
+    progress('优先检查可直接读取的字幕',5);
+    const source=await discoverSource(url,$('#caption-language').value);
+    if(source.kind==='captions') {
+      session?.close(); session=null; transcript=captionData(source);transcript.requested_language=$('#caption-language').value;lastURL=url;result=null;$('#capture-panel').hidden=true;
+      updateReading();if(generate)await generateCurrent();else selectTab('transcript');
+    } else {
+      $('#capture-panel').hidden=false;$('#recovery-actions').hidden=true;$('#open-video').href=url;$('#capture-start').disabled=false;
+      if(source.kind==='media') {
+        $('#capture-start').hidden=true;$('#open-video').hidden=true;$('#capture-help').textContent='正在浏览器中读取可跨域访问的媒体直链，Whisper 在设备上识别，不上传音频。';
+        const current=configureSession(url);
+        try {await current.startMedia(progress);} catch(error) {
+          if(current.queue.jobs.length) throw error;
+          current.close();$('#capture-start').hidden=false;$('#open-video').hidden=false;
+          $('#capture-help').textContent='此媒体链接无法被网页直接读取。打开原视频，再授权共享播放标签页音频，即可在浏览器转写。';
+          $('#capture-status').textContent='直链读取未完成，可以改用标签页音频授权。';
+          throw new Error('无法直接读取媒体链接。请检查网络，或改用下方标签页音频授权。');
+        }
+      } else {
+        $('#capture-start').hidden=false;$('#open-video').hidden=false;$('#capture-help').textContent='此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。转写随播放进行，音频不上传 ASR 服务。';
+        $('#capture-status').textContent='字幕不可直接读取，准备好后授权音频。请完整播放，不中途跳转；不会读取麦克风。';
+      }
+    }
+  } catch(error) {showError(error);}
+  finally {setBusy(false);}
+}
+$('#capture-start').addEventListener('click',async()=>{
+  if(busy)return;$('#error').hidden=true;setBusy(true);$('#capture-start').disabled=true;
+  try {
+    const current=configureSession($('#video-url').value.trim());
+    $('#capture-stop').hidden=false;
+    await current.startCapture();
+  } catch(error) {showError(error);setBusy(false);$('#capture-start').disabled=false;}
+});
+$('#capture-stop').addEventListener('click',async()=>{try{await session?.finish();}catch{}});
+$('#retry-cpu').addEventListener('click',async()=>{setBusy(true);$('#error').hidden=true;try{await session?.retryCPU();}catch(error){showError(error);setBusy(false);}});
+$('#save-audio').addEventListener('click',()=>{for(const file of session?.recoveryFiles() || []){const a=make('a');a.href=URL.createObjectURL(file.blob);a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);}});
+window.addEventListener('pagehide',()=>session?.close());
 function exportedMarkdown() {
   if (!transcript) return "";
   const source = transcript.url ? "来源：" + transcript.url + "\n\n" : "";
@@ -322,6 +326,7 @@ function exportedMarkdown() {
         transcript.title +
         "\n\n" +
         source +
+        (transcript.source === "browser-asr" ? (transcript.partial ? "状态：转写未完成，以下仅为已识别部分。\n\n" : "状态：本次读取已完成。\n\n") + (transcript.timeline === "capture" ? "时间点来自音频采集，受播放起点、暂停、跳转和倍速影响。\n\n" : "") : "") +
         transcript.segments
           .map((cue) => "[" + time(cue.start) + "] " + cue.text)
           .join("\n\n")
@@ -362,10 +367,7 @@ function describeProvider() {
       provider === "deepseek"
         ? "使用 DeepSeek 官方接口，调用费用由你的账户承担。"
         : "填写兼容 Chat Completions 的 HTTPS Base URL，不需要填写完整 /chat/completions 路径。";
-  $("#key-note").textContent =
-    provider === "deepseek" && bootstrap.server_key_available
-      ? "本次服务已在后端内存加载 DeepSeek 调试 Key，可留空。不会回传 Key 或写入文件。"
-      : "不会写入浏览器存储、项目文件或导出文章。刷新页面后需重新填写。";
+  $('#key-note').textContent='Key 仅在当前页面内存使用；浏览器直接请求所选模型服务，刷新后需重新填写。自定义服务需允许跨域（CORS）。';
 }
 function openSettings() {
   for (const [id, key] of [
@@ -382,7 +384,7 @@ function openSettings() {
   $("#settings").showModal();
 }
 $("#settings-open").addEventListener("click", () =>
-  bootstrap ? openSettings() : toast("正在连接本机服务…"),
+  bootstrap ? openSettings() : toast("正在准备页面…"),
 );
 $("#settings-close").addEventListener("click", () => $("#settings").close());
 $("#provider").addEventListener("change", () => {
@@ -416,11 +418,9 @@ $("#test-connection").addEventListener("click", async () => {
   label.classList.remove("failed");
   label.textContent = "正在测试连接…";
   try {
-    const job = await api("/api/test", { config: readDrawer() });
-    const response = await waitJob(
-      job,
-      (message) => (label.textContent = message),
-    );
+    const tested=resolveConfig(readDrawer());
+    await chatRequest(tested,[{role:'user',content:'Reply with OK only.'}],{maxTokens:16});
+    const response={model:tested.model};
     label.textContent = "连接成功 · " + response.model;
   } catch (error) {
     label.textContent = error.message;
@@ -497,11 +497,8 @@ $("#subtitle-file").addEventListener("change", async (event) => {
       throw new Error("请选择 SRT、VTT 或 JSON 字幕文件。");
     setBusy(true);
     progress("正在读取字幕文件", 25);
-    transcript = await api("/api/import", {
-      content: await file.text(),
-      format,
-      title: file.name.replace(/\.[^.]+$/, ""),
-    });
+    session?.close();session=null;$('#capture-panel').hidden=true;
+    transcript = {segments:parseCaptions(await file.text(),format),title:file.name.replace(/\.[^.]+$/,''),url:'',source:'subtitle-file',partial:false,automatic:false,language:'unknown'};
     lastURL = "";
     result = null;
     $("#search").value = "";
@@ -516,7 +513,7 @@ $("#subtitle-file").addEventListener("change", async (event) => {
 });
 
 async function init() {
-  bootstrap = await api("/api/bootstrap");
+  bootstrap = {presets:PRESETS};
   let preferences = {};
   try {
     preferences = JSON.parse(
@@ -543,7 +540,7 @@ async function init() {
 init().catch(() => {
   showError(
     new Error(
-      "无法连接 readvideo 本机服务，请确认 app.py 正在运行，然后刷新页面。",
+      "页面初始化失败，请刷新重试。",
     ),
   );
   $("#generate").disabled = true;
