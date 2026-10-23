@@ -48,6 +48,8 @@
 
 ## 真实验证
 
+[YouTube / Bilibili 实测记录与 CPU 计时](docs/platform-evaluation.md)：明确标记已观察、受限和未验证的部分，不将音频授权入口当成整个平台流程通过。
+
 Chrome 已在 CPU/WASM 模式下使用真实 Whisper 模型识别公开 JFK 语音样本；另以浏览器直接请求 DeepSeek，将 64 条字幕生成 1,472 字中文文章，无应用后端或代理。[验证记录](docs/verification.md)
 
 ![真实 CPU 浏览器转写](docs/images/browser-asr.png)

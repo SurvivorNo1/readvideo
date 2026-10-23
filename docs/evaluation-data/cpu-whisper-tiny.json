@@ -1,0 +1,15 @@
+{
+  "kind": "real CPU/WASM inference; same public sample twice, no platform-capture claim",
+  "testedAt": "2026-10-23T16:06:42.723Z",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "logicalCores": 16,
+  "device": "wasm",
+  "audioSeconds": 11,
+  "modelSetupMs": 15265.600000023842,
+  "firstInferenceMs": 2559.5,
+  "warmInferenceMs": 2082.3000000715256,
+  "firstInferenceSpeed": 4.297714397343231,
+  "warmInferenceSpeed": 5.2826201794276315,
+  "firstText": " And so my fellow Americans ask not what your country can do for you, ask what you can do for your country.",
+  "warmText": " And so my fellow Americans ask not what your country can do for you, ask what you can do for your country."
+}

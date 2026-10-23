@@ -1,5 +1,7 @@
 # Browser-only verification, v0.3
 
+Platform-specific observations and a timed CPU benchmark are recorded separately in [platform-evaluation.md](platform-evaluation.md). That report explicitly distinguishes verified caption routing from the still-unverified platform audio-capture workflow.
+
 ## Contract and tests
 
 SPEC.md records the browser-only workflow before implementation. The first JavaScript test run failed because web/core.mjs did not exist (.qa/tdd-web-red.txt, ignored local evidence). Core implementation then passed. A floating-point duration assertion was corrected to numeric tolerance rather than claiming a product defect.
