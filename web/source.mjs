@@ -146,11 +146,12 @@ export async function discoverSource(
         automatic: false,
       };
     }
+    const pageURL = response.url ? sourceURL(response.url) : url;
     const document = new DOMParser().parseFromString(text, "text/html");
     let tracks = [...document.querySelectorAll("track[src]")]
       .filter((t) => ["captions", "subtitles"].includes(t.kind || "subtitles"))
       .map((t) => ({
-        url: new URL(t.getAttribute("src"), url).href,
+        url: new URL(t.getAttribute("src"), pageURL).href,
         language: t.srclang,
         ext: "vtt",
       }));
@@ -184,6 +185,33 @@ export async function discoverSource(
             automatic: !!track.automatic,
           };
         }
+      } catch {}
+    }
+    // HTML is parsed inertly. Only explicit, CORS-readable media is eligible.
+    const candidates = [
+      ...document.querySelectorAll("audio[src], audio source[src]"),
+      ...document.querySelectorAll("video[src], video source[src]"),
+    ];
+    const seen = new Set();
+    for (const element of candidates) {
+      try {
+        const target = sourceURL(
+          new URL(element.getAttribute("src"), pageURL).href,
+        ).href;
+        if (seen.has(target)) continue;
+        seen.add(target);
+        const media = await request(target);
+        const readable =
+          media.ok &&
+          /^(audio|video)\//i.test(media.headers.get("content-type") || "");
+        await media.body?.cancel();
+        if (readable)
+          return {
+            kind: "media",
+            url: target,
+            source_url: url.href,
+            title: document.title || "视频转写",
+          };
       } catch {}
     }
   } catch {

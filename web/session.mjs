@@ -39,6 +39,7 @@ export class ReadingSession {
       source: "browser-asr",
       automatic: true,
       language,
+      requested_language: language,
       partial: true,
       timeline: "capture",
       uploader: "Whisper tiny · 本机浏览器推理",
@@ -121,11 +122,11 @@ export class ReadingSession {
       throw error;
     }
   }
-  async startMedia(progress) {
+  async startMedia(progress, mediaURL = this.url) {
     this.transcript.timeline = "media";
     this.modelReady = this.asr.load();
     this.modelReady.catch(() => {});
-    const jobs = await decodeMedia(this.url, progress);
+    const jobs = await decodeMedia(mediaURL, progress);
     this.elapsed = jobs.at(-1)?.keepUntil || 0;
     this.ended = true;
     for (const job of jobs) this.add(job);

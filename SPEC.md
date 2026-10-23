@@ -14,4 +14,9 @@ This supersedes the local Python runtime in SPEC.md. The approved interface rema
 
 ## Product limits
 
+### Compatibility and reuse contracts
+
+- W8: For readable HTML, try captions first, then explicit HTML audio/video sources. Resolve relative URLs against the final page URL; prefer an audio-only source to avoid downloading video unnecessarily. Validate media access by HTTP(S), CORS and audio/video content type before starting ASR. Keep the original page as the transcript source; never execute page scripts or use a proxy to bypass restrictions.
+- W9: A completed browser transcript is reusable for the same link and recognition language. Changing article length must not trigger another capture or recognition. Changing recognition language must start a new read.
+
 Desktop Chrome/Edge with tab-audio sharing is the initial capture target. Lack of GPU changes speed, not the availability of CPU inference. Mobile browsers or devices without display-audio capture can use readable direct links/subtitle imports. Full long-form capture can be slow on CPU and initial model download can be significant. ASR can misrecognize; preserve and label the original machine transcript. The user controls source playback speed; no automatic cross-origin player control.

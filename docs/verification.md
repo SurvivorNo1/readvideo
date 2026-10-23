@@ -10,7 +10,9 @@ Unit tests cover resampling, full window coverage and stop tail, overlap/timesta
 
 The 12 deterministic browser scenarios cover static initialization without /api/, captions skipping ASR, four depths, safe model rendering, full export despite filtering, key non-persistence, explicit consent routing, denied/no-audio capture, stopping tracks, actual AudioWorklet processing of a synthetic stream with an explicitly mocked model Worker, subtitle import and mobile overflow. These do not claim a real permission-picker interaction or real model inference.
 
-The inline-player change adds recognized-domain embed validation and same-tab audio-constraint tests before implementation, plus a browser regression for showing YouTube inline without opening a popup, requesting current-tab audio and retaining an explicit original-site fallback. Current totals are 18 unit tests and 13 browser scenarios. Real embed playback observations are separate in platform-evaluation.md; actual platform-audio authorization remains unverified.
+The inline-player change adds recognized-domain embed validation and same-tab audio-constraint tests before implementation, plus a browser regression for showing YouTube inline without opening a popup, requesting current-tab audio and retaining an explicit original-site fallback. Current totals are 18 unit tests and 16 browser scenarios. Real embed playback observations are separate in platform-evaluation.md; actual platform-audio authorization remains unverified.
+
+Compatibility regressions were added before their fixes: readable HTML previously fell through to capture despite an explicit audio source, and completed ASR transcripts were not reused when generating another article length. The tests observed both failures before implementation. Additional deterministic coverage checks subtitle priority, relative media URLs after redirects, audio-first selection, denied media access, decoding a complete fixture WAV without playback and preserving the original page link. The model in these regressions is an explicit adapter, not a new real-platform speed result.
 
 ## Real browser CPU inference
 

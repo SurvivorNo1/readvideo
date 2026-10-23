@@ -275,6 +275,8 @@ function preparePlayer(url) {
 $("#open-video").addEventListener("click", () => {
   preferOtherTab = true;
   $("#capture-start").textContent = "② 授权音频并开始";
+  $("#capture-help").textContent =
+    "在原站准备好视频，再回到这里点击授权。选择原视频标签页并勾选“共享标签页音频”，然后从头播放；结束后点击“停止采集，完成转写”。";
 });
 let session = null,
   generateAfterCapture = true;
@@ -411,10 +413,11 @@ async function run(generate = true) {
         $("#capture-start").hidden = true;
         $("#open-video").hidden = true;
         $("#capture-help").textContent =
-          "正在浏览器中读取可跨域访问的媒体直链，Whisper 在设备上识别，不上传音频。";
+          "已找到可读取的完整音轨，正在本机快速转写，无需播放或授权。首次使用会先下载识别模型，无 GPU 时自动使用 CPU。";
         const current = configureSession(url);
         try {
-          await current.startMedia(progress);
+          if (source.title) current.transcript.title = source.title;
+          await current.startMedia(progress, source.url);
         } catch (error) {
           if (current.queue.jobs.length) throw error;
           current.close();
@@ -432,7 +435,7 @@ async function run(generate = true) {
         $("#capture-start").hidden = false;
         $("#open-video").hidden = false;
         $("#capture-help").textContent = currentPlayer
-          ? "可以在本页播放视频。先授权共享当前 readvideo 标签页音频，再播放下方视频；转写在浏览器内进行。如果播放器受平台限制，请改用原站播放，并共享原视频标签页音频。"
+          ? "① 点击授权，选择当前 readvideo 标签页并勾选“共享标签页音频”。② 从头播放下方视频。③ 播放结束，点击“停止采集，完成转写”。播放器无法播放时，使用“原站播放”。"
           : "此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。转写随播放进行，音频不上传 ASR 服务。";
         $("#capture-status").textContent =
           "字幕不可直接读取，准备好后授权音频。请完整播放，不中途跳转；不会读取麦克风。";

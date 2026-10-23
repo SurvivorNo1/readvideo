@@ -16,6 +16,9 @@ Desktop Chrome / Edge is the initial tab-audio target. The interface is Chinese;
 
 ## Browser computation
 
+- Automatically prefer captions, then explicit CORS-readable audio/video sources in readable pages, then authorized tab audio. Complete accessible audio is decoded without waiting for playback; restricted platform pages still require consent and playback.
+- Completed transcripts are reused for the same URL and recognition language when changing article depth, without another recording or recognition pass.
+
 - AudioWorklet captures mono PCM. A separate module Worker runs pinned Transformers.js 3.8.1 and Whisper tiny multilingual. Assets download on demand and can be browser-cached.
 - WebGPU is optional. GPU initialization/inference failures retry the same audio on CPU. Users can force CPU/WASM, verified using real speech.
 - Ordered 24-second windows retain context and the final short tail. Capture and recognition overlap. Pending time is visible; a 20-minute backlog stops capture and drains retained audio.

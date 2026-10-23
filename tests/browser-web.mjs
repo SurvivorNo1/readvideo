@@ -74,6 +74,76 @@ try {
   });
   await page.goto(site.url);
   await step(
+    "readable pages prefer captions, then validated full audio, keeping the page source",
+    async () => {
+      const observed = await page.evaluate(async () => {
+        const { discoverSource } = await import("./source.mjs");
+        const html =
+          '<title>Lecture</title><video src="movie.mp4"><track kind="captions" src="captions.vtt"></video><audio src="sound.m4a"></audio>';
+        const calls = [];
+        let captionsAvailable = true;
+        const fetcher = async (url) => {
+          calls.push(url);
+          if (url === "https://lecture.example/watch") {
+            const response = new Response(html, {
+              headers: { "content-type": "text/html" },
+            });
+            Object.defineProperty(response, "url", {
+              value: "https://lecture.example/episodes/one",
+            });
+            return response;
+          }
+          if (url.endsWith("captions.vtt"))
+            return new Response(
+              captionsAvailable
+                ? "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nCaption first."
+                : "",
+              { status: captionsAvailable ? 200 : 404 },
+            );
+          return new Response("", { headers: { "content-type": "audio/mp4" } });
+        };
+        const captions = await discoverSource(
+          "https://lecture.example/watch",
+          "auto",
+          fetcher,
+        );
+        const captionCalls = calls.splice(0);
+        captionsAvailable = false;
+        const audio = await discoverSource(
+          "https://lecture.example/watch",
+          "auto",
+          fetcher,
+        );
+        const audioCalls = calls.splice(0);
+        const denied = await discoverSource(
+          "https://lecture.example/watch",
+          "auto",
+          async (url) => {
+            if (url.endsWith("/watch")) return fetcher(url);
+            throw new TypeError("CORS denied");
+          },
+        );
+        return { captions, captionCalls, audio, audioCalls, denied };
+      });
+      assert.equal(observed.captions.kind, "captions");
+      assert.equal(
+        observed.captionCalls.some((url) => url.endsWith(".m4a")),
+        false,
+      );
+      assert.equal(observed.audio.kind, "media");
+      assert.equal(
+        observed.audio.url,
+        "https://lecture.example/episodes/sound.m4a",
+      );
+      assert.equal(observed.audio.source_url, "https://lecture.example/watch");
+      assert.equal(
+        observed.audioCalls.some((url) => url.endsWith("movie.mp4")),
+        false,
+      );
+      assert.equal(observed.denied.kind, "capture");
+    },
+  );
+  await step(
     "single static page initializes without any local API",
     async () => {
       await page.getByLabel("视频链接", { exact: true }).waitFor();
@@ -353,6 +423,80 @@ try {
         true,
       );
       await page.evaluate(() => window.testAudio.close());
+    },
+  );
+  await step(
+    "a completed ASR transcript generates another length without recapturing",
+    async () => {
+      const before = generations.length;
+      await page.evaluate(() => {
+        window.recaptureCount = 0;
+        navigator.mediaDevices.getDisplayMedia = async () => {
+          window.recaptureCount++;
+          throw Error("Unexpected second capture");
+        };
+      });
+      await page.getByLabel("文章篇幅", { exact: true }).selectOption("short");
+      await page
+        .getByRole("button", { name: "读取并生成", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.equal(generations.length, before + 1);
+      assert.match(generations.at(-1).messages[1].content, /Captured final/);
+      assert.equal(await page.evaluate(() => window.recaptureCount), 0);
+    },
+  );
+  await step(
+    "a readable page's full audio is decoded without playing and exports the original link",
+    async () => {
+      const bytes = await page.evaluate(async () => {
+        const { wavBlob } = await import("./audio.mjs");
+        const pcm = Float32Array.from(
+          { length: 16000 },
+          (_, i) => Math.sin(i / 10) * 0.1,
+        );
+        return [...new Uint8Array(await wavBlob(pcm).arrayBuffer())];
+      });
+      await page.route("https://lecture.example/watch", (r) =>
+        r.fulfill({
+          contentType: "text/html",
+          headers: { "access-control-allow-origin": "*" },
+          body: '<title>Readable lecture</title><audio src="/speech.wav"></audio>',
+        }),
+      );
+      await page.route("https://lecture.example/speech.wav", (r) =>
+        r.fulfill({
+          contentType: "audio/wav",
+          headers: { "access-control-allow-origin": "*" },
+          body: Buffer.from(bytes),
+        }),
+      );
+      await page
+        .getByLabel("视频链接", { exact: true })
+        .fill("https://lecture.example/watch");
+      await page
+        .getByRole("button", { name: "仅读取字幕", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.match(
+        await page.locator("#source-title").textContent(),
+        /Readable lecture/,
+      );
+      const sourceLink = new URL(
+        await page.locator("#source-link").getAttribute("href"),
+      );
+      sourceLink.searchParams.delete("t");
+      assert.equal(sourceLink.href, "https://lecture.example/watch");
+      assert.match(
+        await page.locator("#transcript").textContent(),
+        /Captured final/,
+      );
+      assert.equal(await page.evaluate(() => window.recaptureCount), 0);
+      assert.equal(await page.locator("#error").isVisible(), false);
     },
   );
   await step(
