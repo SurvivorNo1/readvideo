@@ -1,10 +1,238 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>readvideo — Browser-only video reading.</title><meta name="description" content="Browser-only video reading. Captions first, CPU/WebGPU Whisper ASR, your own LLM API."><link rel="stylesheet" href="style.css"><link rel="icon" href="assets/icon.svg"><link rel="alternate" hreflang="zh-CN" href="index.html"></head><body>
-<header><nav aria-label="Navigation"><a class="brand" href="en.html"><img src="assets/icon.svg" alt="">readvideo</a><span class="spacer"></span><a href="app/">Open the app</a><a href="https://github.com/SurvivorNo1/readvideo">GitHub ↗</a><a href="index.html" lang="zh-CN">中文</a></nav></header>
-<main><section class="hero"><p class="eyebrow">LESS WATCHING. MORE UNDERSTANDING.</p><h1>Turn videos<br><span>into articles.</span></h1><p class="lede">Paste a link. Read captions first.<br>When captions are unavailable, let your browser listen.</p><div class="actions"><a class="button" href="app/">Open the app</a><a href="https://github.com/SurvivorNo1/readvideo">Explore the source ↗</a></div><p class="note">Browser-only · No installation · GPU optional, CPU supported</p><div class="window"><div class="chrome" aria-hidden="true"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="address">readvideo · browser application</span></div><img src="assets/home.png" alt="readvideo actual application" width="1440" height="1000"></div></section>
-<section class="section"><h2>One link. A readable article.</h2><p class="section-intro">Keep the source. Let your browser transcribe, and your chosen model organize the ideas.</p><div class="features"><article class="feature"><span class="number">01 / CAPTIONS</span><h3>Captions first.</h3><p>Read CORS-accessible captions or page subtitle tracks and skip inference. If a platform restricts access, the app explicitly offers tab-audio consent instead.</p></article><article class="feature"><span class="number">02 / TRANSCRIBE</span><h3>No readable captions? Listen.</h3><p>Explicitly share the video tab audio. Whisper runs in a browser Worker while you play it. No cloud ASR, extension or local service required.</p></article><article class="feature"><span class="number">03 / REFINE</span><h3>Edit with evidence.</h3><p>Use your API to generate four article depths. Correct clear transcription errors, preserve numbers and qualifications, and flag uncertain terms while retaining the transcript.</p></article></div></section>
-<div class="soft"><section class="section"><h2>One source. Four reading depths.</h2><p class="section-intro">Length follows information density. No invented filler or silently dropped ending.</p><div class="lengths"><div class="length"><b>Short</b><small>200–350 words<br>The core conclusion</small></div><div class="length"><b>Medium</b><small>600–1,000 words<br>Main ideas and evidence</small></div><div class="length"><b>Long</b><small>1,200–2,000 words<br>Examples and reasoning</small></div><div class="length"><b>Detailed</b><small>2,000–3,500 words<br>Processes and limits</small></div></div></section></div>
-<section class="section reading"><div><p class="eyebrow">YOUR BROWSER. YOUR COMPUTE.</p><h2>No GPU? Still works.</h2><p>This screenshot comes from real Chrome: Whisper recognized a public speech sample using CPU / WASM, without an ASR backend.</p><p>Try WebGPU when available, otherwise run the quantized model on CPU. Audio capture and inference use separate workers, with visible pending time. Model assets download on demand and can be cached.</p><a href="https://github.com/SurvivorNo1/readvideo/blob/main/docs/verification.md">Read the verification record ↗</a></div><img src="assets/browser-asr.png" alt="Real browser CPU Whisper result" loading="lazy"></section>
-<div class="soft"><section class="section" id="start"><h2>Open the website. Start reading.</h2><p class="section-intro">No Python, yt-dlp or local model service. Desktop Chrome / Edge is the initial recommended browser for tab-audio sharing.</p><ol class="steps"><li><b>Paste a link. Check captions.</b><p>Choose an article depth. The app first tries accessible captions.</p></li><li><b>Share tab audio if needed.</b><p>When captions are blocked, open the video, explicitly share its tab audio, and play from the start.</p></li><li><b>Finish transcription. Get an article.</b><p>Stop capture, drain the queue, then generate with your API. Copy or export the full text.</p></li></ol><div class="actions" style="justify-content:flex-start"><a class="button" href="app/">Open the app</a><a href="https://github.com/SurvivorNo1/readvideo">GitHub ↗</a></div><p class="note">Audio stays in the browser. Only requested generation sends text to your chosen API. Keys remain in page memory.</p></section></div>
-<section class="section faq"><h2>A few things to know.</h2><details><summary>Is this website the actual app?</summary><p>Yes. Open the app and use it without a local service. The current app interface is Chinese, with Chinese and English generation and bilingual product pages.</p></details><details><summary>Why share the video tab audio?</summary><p>Webpages cannot freely read protected audio or captions from other sites. Consent shares playback, not a downloadable entire audio track. Capture follows playback; pauses, seeking, ads and speed changes affect timestamps. Skipped content is not recovered automatically.</p></details><details><summary>What if I have no GPU?</summary><p>Use the lightweight Whisper tiny model through CPU / WASM. Speed depends on your device. Pending time is visible, and processing can continue after capture ends. GPU acceleration is optional.</p></details><details><summary>Are ASR and article generation free?</summary><p>Browser ASR does not call a paid transcription service. Initial use downloads an open model. Article generation uses your selected API; its charges or free tier depend on the provider. Custom services must allow browser CORS; no shared key is bundled.</p></details><details><summary>What happens if recognition fails?</summary><p>Earlier text and queued audio are retained. Retry on CPU or download pending audio. Partial results are labelled. Editorial correction is not external fact checking; important claims still need verification.</p></details></section></main>
-<footer>readvideo · Good videos deserve a good read.<br><a href="https://github.com/SurvivorNo1/readvideo">GitHub</a><a href="https://github.com/SurvivorNo1/readvideo/blob/main/LICENSE">MIT License</a><a href="index.html" lang="zh-CN">中文</a></footer></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>readvideo — Browser-only video reading.</title>
+    <meta
+      name="description"
+      content="Browser-only video reading. Captions first, CPU/WebGPU Whisper ASR, your own LLM API."
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="assets/icon.svg" />
+    <link rel="alternate" hreflang="zh-CN" href="index.html" />
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Navigation">
+        <a class="brand" href="en.html"
+          ><img src="assets/icon.svg" alt="" />readvideo</a
+        ><span class="spacer"></span><a href="app/">Open the app</a
+        ><a href="https://github.com/SurvivorNo1/readvideo">GitHub ↗</a
+        ><a href="index.html" lang="zh-CN">中文</a>
+      </nav>
+    </header>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">LESS WATCHING. MORE UNDERSTANDING.</p>
+        <h1>Turn videos<br /><span>into articles.</span></h1>
+        <p class="lede">
+          Paste a link. Read captions first.<br />When captions are unavailable,
+          let your browser listen.
+        </p>
+        <div class="actions">
+          <a class="button" href="app/">Open the app</a
+          ><a href="https://github.com/SurvivorNo1/readvideo"
+            >Explore the source ↗</a
+          >
+        </div>
+        <p class="note">
+          Browser-only · No installation · GPU optional, CPU supported
+        </p>
+        <div class="window">
+          <div class="chrome" aria-hidden="true">
+            <i class="dot"></i><i class="dot"></i><i class="dot"></i
+            ><span class="address">readvideo · browser application</span>
+          </div>
+          <img
+            src="assets/home.png"
+            alt="readvideo actual application"
+            width="1440"
+            height="1000"
+          />
+        </div>
+      </section>
+      <section class="section">
+        <h2>One link. A readable article.</h2>
+        <p class="section-intro">
+          Keep the source. Let your browser transcribe, and your chosen model
+          organize the ideas.
+        </p>
+        <div class="features">
+          <article class="feature">
+            <span class="number">01 / CAPTIONS</span>
+            <h3>Captions first.</h3>
+            <p>
+              Read CORS-accessible captions or page subtitle tracks and skip
+              inference. If a platform restricts access, the app explicitly
+              offers tab-audio consent instead.
+            </p>
+          </article>
+          <article class="feature">
+            <span class="number">02 / TRANSCRIBE</span>
+            <h3>No readable captions? Listen.</h3>
+            <p>
+              Explicitly share the video tab audio. Whisper runs in a browser
+              Worker while you play it. No cloud ASR, extension or local service
+              required.
+            </p>
+          </article>
+          <article class="feature">
+            <span class="number">03 / REFINE</span>
+            <h3>Edit with evidence.</h3>
+            <p>
+              Use your API to generate four article depths. Correct clear
+              transcription errors, preserve numbers and qualifications, and
+              flag uncertain terms while retaining the transcript.
+            </p>
+          </article>
+        </div>
+      </section>
+      <div class="soft">
+        <section class="section">
+          <h2>One source. Four reading depths.</h2>
+          <p class="section-intro">
+            Length follows information density. No invented filler or silently
+            dropped ending.
+          </p>
+          <div class="lengths">
+            <div class="length">
+              <b>Short</b><small>200–350 words<br />The core conclusion</small>
+            </div>
+            <div class="length">
+              <b>Medium</b
+              ><small>600–1,000 words<br />Main ideas and evidence</small>
+            </div>
+            <div class="length">
+              <b>Long</b
+              ><small>1,200–2,000 words<br />Examples and reasoning</small>
+            </div>
+            <div class="length">
+              <b>Detailed</b
+              ><small>2,000–3,500 words<br />Processes and limits</small>
+            </div>
+          </div>
+        </section>
+      </div>
+      <section class="section reading">
+        <div>
+          <p class="eyebrow">YOUR BROWSER. YOUR COMPUTE.</p>
+          <h2>No GPU? Still works.</h2>
+          <p>
+            This screenshot comes from real Chrome: Whisper recognized a public
+            speech sample using CPU / WASM, without an ASR backend.
+          </p>
+          <p>
+            Try WebGPU when available, otherwise run the quantized model on CPU.
+            Audio capture and inference use separate workers, with visible
+            pending time. Model assets download on demand and can be cached.
+          </p>
+          <a
+            href="https://github.com/SurvivorNo1/readvideo/blob/main/docs/verification.md"
+            >Read the verification record ↗</a
+          >
+        </div>
+        <img
+          src="assets/browser-asr.png"
+          alt="Real browser CPU Whisper result"
+          loading="lazy"
+        />
+      </section>
+      <div class="soft">
+        <section class="section" id="start">
+          <h2>Open the website. Start reading.</h2>
+          <p class="section-intro">
+            No Python, yt-dlp or local model service. Desktop Chrome / Edge is
+            the initial recommended browser for tab-audio sharing.
+          </p>
+          <ol class="steps">
+            <li>
+              <b>Paste a link. Check captions.</b>
+              <p>
+                Choose an article depth. The app first tries accessible
+                captions.
+              </p>
+            </li>
+            <li>
+              <b>Share tab audio if needed.</b>
+              <p>
+                When captions are blocked, open the video, explicitly share its
+                tab audio, and play from the start.
+              </p>
+            </li>
+            <li>
+              <b>Finish transcription. Get an article.</b>
+              <p>
+                Stop capture, drain the queue, then generate with your API. Copy
+                or export the full text.
+              </p>
+            </li>
+          </ol>
+          <div class="actions" style="justify-content: flex-start">
+            <a class="button" href="app/">Open the app</a
+            ><a href="https://github.com/SurvivorNo1/readvideo">GitHub ↗</a>
+          </div>
+          <p class="note">
+            Audio stays in the browser. Only requested generation sends text to
+            your chosen API. Keys remain in page memory.
+          </p>
+        </section>
+      </div>
+      <section class="section faq">
+        <h2>A few things to know.</h2>
+        <details>
+          <summary>Is this website the actual app?</summary>
+          <p>
+            Yes. Open the app and use it without a local service. The current
+            app interface is Chinese, with Chinese and English generation and
+            bilingual product pages.
+          </p>
+        </details>
+        <details>
+          <summary>Why share the video tab audio?</summary>
+          <p>
+            Webpages cannot freely read protected audio or captions from other
+            sites. Consent shares playback, not a downloadable entire audio
+            track. Capture follows playback; pauses, seeking, ads and speed
+            changes affect timestamps. Skipped content is not recovered
+            automatically.
+          </p>
+        </details>
+        <details>
+          <summary>What if I have no GPU?</summary>
+          <p>
+            Use the lightweight Whisper tiny model through CPU / WASM. Speed
+            depends on your device. Pending time is visible, and processing can
+            continue after capture ends. GPU acceleration is optional.
+          </p>
+        </details>
+        <details>
+          <summary>Are ASR and article generation free?</summary>
+          <p>
+            Browser ASR does not call a paid transcription service. Initial use
+            downloads an open model. Article generation uses your selected API;
+            its charges or free tier depend on the provider. Custom services
+            must allow browser CORS; no shared key is bundled.
+          </p>
+        </details>
+        <details>
+          <summary>What happens if recognition fails?</summary>
+          <p>
+            Earlier text and queued audio are retained. Retry on CPU or download
+            pending audio. Partial results are labelled. Editorial correction is
+            not external fact checking; important claims still need
+            verification.
+          </p>
+        </details>
+      </section>
+    </main>
+    <footer>
+      readvideo · Good videos deserve a good read.<br /><a
+        href="https://github.com/SurvivorNo1/readvideo"
+        >GitHub</a
+      ><a href="https://github.com/SurvivorNo1/readvideo/blob/main/LICENSE"
+        >MIT License</a
+      ><a href="index.html" lang="zh-CN">中文</a>
+    </footer>
+  </body>
+</html>

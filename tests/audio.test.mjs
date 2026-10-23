@@ -1,6 +1,75 @@
-import test from 'node:test';import assert from 'node:assert/strict';
-import {AudioChunker,SerialQueue,wavBlob,BrowserASR} from '../web/audio.mjs';
-test('streaming windows have same coverage as whole audio, including stop tail',()=>{const chunker=new AudioChunker(16000);const jobs=[];for(let i=0;i<51;i++)jobs.push(...chunker.push(new Float32Array(16000)));jobs.push(...chunker.push(new Float32Array(0),true));assert.equal(jobs.length,3);assert.equal(jobs.at(-1).keepUntil,51);assert.equal(jobs.reduce((s,j)=>s+j.keepUntil-j.keepFrom,0),51);assert.equal(jobs.at(-1).audio.length,5*16000);});
-test('queue processes in order, stops on failure and retains audio for CPU retry',async()=>{const seen=[];let fail=true;const queue=new SerialQueue(async job=>{seen.push(job.id);if(job.id===2&&fail)throw Error('model failed');});queue.add({id:1,keepFrom:0,keepUntil:24});queue.add({id:2,keepFrom:24,keepUntil:48});queue.add({id:3,keepFrom:48,keepUntil:50});await assert.rejects(()=>queue.drain());assert.deepEqual(seen,[1,2]);assert.equal(queue.pendingSeconds,26);fail=false;await queue.retry();assert.deepEqual(seen,[1,2,2,3]);assert.equal(queue.pendingSeconds,0);});
-test('worker receives a copy; source audio remains recoverable and no API key is sent',async()=>{let worker;const asr=new BrowserASR(()=>{},()=>worker={postMessage(message){assert.equal('api_key' in message,false);message.audio[0]=0;queueMicrotask(()=>worker.onmessage({data:{id:message.id,type:'done',device:'wasm',chunks:[]}}));},terminate(){}});const source=new Float32Array([.75]);await asr.recognize({audio:source},'en');assert.equal(source[0],.75);assert.equal(asr.device,'wasm');asr.dispose();});
-test('recovery WAV has valid PCM header and every sample',async()=>{const buffer=await wavBlob(new Float32Array([0,.5,-.5])).arrayBuffer();assert.equal(buffer.byteLength,50);assert.equal(new TextDecoder().decode(buffer.slice(0,4)),'RIFF');assert.equal(new DataView(buffer).getUint32(40,true),6);});
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  AudioChunker,
+  SerialQueue,
+  wavBlob,
+  BrowserASR,
+} from "../web/audio.mjs";
+test("streaming windows have same coverage as whole audio, including stop tail", () => {
+  const chunker = new AudioChunker(16000);
+  const jobs = [];
+  for (let i = 0; i < 51; i++)
+    jobs.push(...chunker.push(new Float32Array(16000)));
+  jobs.push(...chunker.push(new Float32Array(0), true));
+  assert.equal(jobs.length, 3);
+  assert.equal(jobs.at(-1).keepUntil, 51);
+  assert.equal(
+    jobs.reduce((s, j) => s + j.keepUntil - j.keepFrom, 0),
+    51,
+  );
+  assert.equal(jobs.at(-1).audio.length, 5 * 16000);
+});
+test("queue processes in order, stops on failure and retains audio for CPU retry", async () => {
+  const seen = [];
+  let fail = true;
+  const queue = new SerialQueue(async (job) => {
+    seen.push(job.id);
+    if (job.id === 2 && fail) throw Error("model failed");
+  });
+  queue.add({ id: 1, keepFrom: 0, keepUntil: 24 });
+  queue.add({ id: 2, keepFrom: 24, keepUntil: 48 });
+  queue.add({ id: 3, keepFrom: 48, keepUntil: 50 });
+  await assert.rejects(() => queue.drain());
+  assert.deepEqual(seen, [1, 2]);
+  assert.equal(queue.pendingSeconds, 26);
+  fail = false;
+  await queue.retry();
+  assert.deepEqual(seen, [1, 2, 2, 3]);
+  assert.equal(queue.pendingSeconds, 0);
+});
+test("worker receives a copy; source audio remains recoverable and no API key is sent", async () => {
+  let worker;
+  const asr = new BrowserASR(
+    () => {},
+    () =>
+      (worker = {
+        postMessage(message) {
+          assert.equal("api_key" in message, false);
+          message.audio[0] = 0;
+          queueMicrotask(() =>
+            worker.onmessage({
+              data: {
+                id: message.id,
+                type: "done",
+                device: "wasm",
+                chunks: [],
+              },
+            }),
+          );
+        },
+        terminate() {},
+      }),
+  );
+  const source = new Float32Array([0.75]);
+  await asr.recognize({ audio: source }, "en");
+  assert.equal(source[0], 0.75);
+  assert.equal(asr.device, "wasm");
+  asr.dispose();
+});
+test("recovery WAV has valid PCM header and every sample", async () => {
+  const buffer = await wavBlob(new Float32Array([0, 0.5, -0.5])).arrayBuffer();
+  assert.equal(buffer.byteLength, 50);
+  assert.equal(new TextDecoder().decode(buffer.slice(0, 4)), "RIFF");
+  assert.equal(new DataView(buffer).getUint32(40, true), 6);
+});

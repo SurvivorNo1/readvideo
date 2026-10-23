@@ -1,4 +1,35 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {discoverSource,sourceURL} from '../web/source.mjs';
-test('readable subtitle links take priority over model inference',async()=>{const result=await discoverSource('https://example.com/subtitle.vtt','en',async()=>new Response('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nActual source captions.',{headers:{'content-type':'text/vtt'}}));assert.equal(result.kind,'captions');assert.equal(result.segments[0].text,'Actual source captions.');});
-test('CORS denial becomes explicit tab-capture route, never fake captions',async()=>{const result=await discoverSource('https://example.com/video','auto',async()=>{throw TypeError('CORS');});assert.deepEqual(result,{kind:'capture',url:'https://example.com/video'});});
-test('media links go to browser decoding; ambiguous input is rejected',async()=>{const result=await discoverSource('https://example.com/video.mp4');assert.equal(result.kind,'media');assert.throws(()=>sourceURL('javascript:alert(1)'));assert.throws(()=>sourceURL('https://user:password@example.com'));});
+import test from "node:test";
+import assert from "node:assert/strict";
+import { discoverSource, sourceURL } from "../web/source.mjs";
+test("readable subtitle links take priority over model inference", async () => {
+  const result = await discoverSource(
+    "https://example.com/subtitle.vtt",
+    "en",
+    async () =>
+      new Response(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nActual source captions.",
+        { headers: { "content-type": "text/vtt" } },
+      ),
+  );
+  assert.equal(result.kind, "captions");
+  assert.equal(result.segments[0].text, "Actual source captions.");
+});
+test("CORS denial becomes explicit tab-capture route, never fake captions", async () => {
+  const result = await discoverSource(
+    "https://example.com/video",
+    "auto",
+    async () => {
+      throw TypeError("CORS");
+    },
+  );
+  assert.deepEqual(result, {
+    kind: "capture",
+    url: "https://example.com/video",
+  });
+});
+test("media links go to browser decoding; ambiguous input is rejected", async () => {
+  const result = await discoverSource("https://example.com/video.mp4");
+  assert.equal(result.kind, "media");
+  assert.throws(() => sourceURL("javascript:alert(1)"));
+  assert.throws(() => sourceURL("https://user:password@example.com"));
+});
