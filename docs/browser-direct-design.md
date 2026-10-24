@@ -1,6 +1,60 @@
 # readvideo：链接到文章的浏览器直连设计
 
-状态：2026-10-24 实施中。已实现并验证隐藏下载页、4 路分块下载、重试、IndexedDB 分块缓存、转写窗口缓存及 16 kHz 解码。线上 Cloudflare 解析仍未通过验收，完整链接到文章流程尚未开放为默认路径。
+状态：2026-10-25 线上主链路已打通。VPS 轻量解析服务上线，真实 Chrome 在 GitHub Pages 上完成「粘贴链接 → 解析 → 直连 CDN 下载 → 浏览器 ASR → 完整字幕」全流程（22 条字幕 / 1,852 字符）。Cloudflare Worker 仍因 412 不可用，已改为 VPS 解析。
+
+## 2026-10-25 VPS 解析服务上线
+
+### 结论
+
+线上主链路已可用，不再是「仅本机验证」。
+
+### 实测证据（真实 Chrome，访问 https://survivorno1.github.io/readvideo/app/）
+
+| 环节 | 结果 |
+|---|---|
+| CORS 预检 | `OPTIONS /rv-resolve/resolve` → **204** |
+| 解析 | `POST /rv-resolve/resolve` → **200**，返回标题、时长、音轨直链 |
+| 音轨下载 | `GET upos-sz-mirrorcosov.bilivideo.com/...m4s` → **206 ×4**（4 路 Range 并发） |
+| 解码 + 转写 | Whisper tiny @ WebGPU，`01:58` 音频 → **22 条字幕 / 1,852 字符** |
+| 对照组 | 桥接页不带 `?r=` 时 CDN 返回 **403**，符合预期 |
+
+样本 `BV1VS4y1t7st`（2:01，无字幕，走 ASR）。
+截图：`readvideo-deploy/live-success.png`。
+
+### 关键发现：B 站按 UA 做风控，且与直觉相反
+
+在 VPS（洛杉矶出口）上实测：
+
+```
+Chrome UA + Referer            → HTTP 412  request was banned
+Chrome UA + 完整浏览器头        → HTTP 412
+curl UA                        → HTTP 200 ✅
+Node 默认 UA                   → HTTP 200 ✅
+空 UA（不发 User-Agent）        → HTTP 200 ✅
+```
+
+**因此解析服务请求 `api.bilibili.com` 时不能发 User-Agent。** 这与「伪装成浏览器更安全」的直觉相反，是本次能跑通的前提。同时**不能发 `Origin`**（B 站 API 有 Origin 白名单，带了直接 403）。
+
+### 音轨地址过滤
+
+平台返回的 `baseUrl` 常是 P2P CDN（`*.mountaintoys.cn:4483`，**带端口**），备份镜像是 `*.bilivideo.com`（**不带端口**）。前端 `audioURL()` 拒绝带端口的地址与非白名单域名，因此服务端只返回 `bilivideo.com` / `bilivideo.cn` 且不带端口的镜像。`audio-bridge.html` 的 CSP 也只放行这两个域，两边一致。
+
+### 已知限制
+
+- **地区限制**：VPS 在洛杉矶。少数视频（实测音乐 MV）对海外 IP 返回 `-404 啥都木有`，服务返回 404 并说明原因。国内出口可正常访问同一视频。
+- **镜像数不稳定**：平台有时只返回 1 个合格镜像，此时无回退源。
+- **无登录态**：不接收用户 Cookie，番剧/大会员内容不可解析。
+- **不保证不被封**：UA 规则与 IP 段策略随时可能调整；熔断器只保护服务器，不保证解析成功率。
+
+### 部署位置与回滚
+
+- 代码：`/opt/readvideo`（独立用户 `readvideo`，systemd 限额 256 MB / 50% CPU / TasksMax 64）
+- 路由：nginx `location /rv-resolve/` → `127.0.0.1:8891`，Caddy 与既有站点未改动
+- 备份：`/root/backup-rv-<时间戳>/`
+- 卸载：`server/deploy/99-uninstall.sh`
+- 迁移说明见 `server/README.md`
+
+
 
 ## 本次实测进展
 
