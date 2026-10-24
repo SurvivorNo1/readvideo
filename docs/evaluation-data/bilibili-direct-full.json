@@ -1,0 +1,14 @@
+{
+  "testedAt": "2026-10-24T15:42:29.080Z",
+  "sample": "BV1QAnB67EL3",
+  "metadataDuration": 2512,
+  "environment": "real clean-profile Chrome, local static page and production downloader iframe; Node metadata resolution only; no mocked CDN",
+  "bytes": 20627701,
+  "downloadMs": 4908,
+  "decodeMs": 6587,
+  "decodedDuration": 2511.8933125,
+  "windows": 105,
+  "sha256": "6adce004433e1a39454a4772e94ee0ca180e38c3606c64817ffcb34d868cfb3e",
+  "cachedDownloadMs": 78,
+  "cacheMatches": true
+}

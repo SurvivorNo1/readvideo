@@ -269,9 +269,10 @@ export async function decodeMedia(value, progress = () => {}, fetcher = fetch) {
 export async function decodeAudioBytes(bytes) {
   if (!bytes.byteLength || bytes.byteLength > 128000000)
     throw Error("音频文件需在 128 MB 以内，且不能为空。");
-  const context = new AudioContext();
+  const context = new AudioContext({sampleRate:16000});
   try {
-    const decoded = await context.decodeAudioData(bytes.buffer);
+    const buffer=bytes.byteOffset===0&&bytes.byteLength===bytes.buffer.byteLength?bytes.buffer:bytes.slice().buffer;
+    const decoded = await context.decodeAudioData(buffer);
     if (decoded.duration > 3600)
       throw Error("音频超过一小时，请分段处理。没有截断原音频。");
     const mono = new Float32Array(decoded.length);
@@ -280,6 +281,7 @@ export async function decodeAudioBytes(bytes) {
       for (let i = 0; i < mono.length; i++)
         mono[i] += data[i] / decoded.numberOfChannels;
     }
+    if(decoded.sampleRate===16000)return windowAudio(mono,16000);
     return windowAudio(mono, decoded.sampleRate).map((job) => ({
       ...job,
       audio: resampleMedia(job.audio, decoded.sampleRate),

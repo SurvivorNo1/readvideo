@@ -52,6 +52,7 @@ try {
     body: JSON.stringify({
       url: result.sample,
       language: "auto",
+      ...(process.env.READVIDEO_DIRECT === 'true' ? {transport:'direct-cdn'} : {}),
       ...(hint ? { public_info: hint } : {}),
     }),
     signal: AbortSignal.timeout(90000),
@@ -65,7 +66,11 @@ try {
     throw Error("Resolve failed");
   }
   result.kind = source.kind;
-  if (source.kind === "media") {
+  if(source.kind === 'media' && source.transport === 'direct-cdn') {
+    if(!Array.isArray(source.urls)||!source.urls.length)throw Error('Missing CDN candidates');
+    result.mediaHosts=source.urls.map(value=>{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||!['bilivideo.com','bilivideo.cn'].some(h=>u.hostname===h||u.hostname.endsWith('.'+h)))throw Error('Invalid CDN host');return u.hostname;});
+    result.scope='Resolver only; browser download and ASR require separate acceptance';
+  } else if (source.kind === "media") {
     const media = new URL(source.url);
     if (media.origin !== endpoint.origin || media.pathname !== "/media")
       throw Error("Unexpected media destination");

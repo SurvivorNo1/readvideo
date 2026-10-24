@@ -793,6 +793,7 @@ try {
       assert.deepEqual(sent, {
         url: "https://www.bilibili.com/video/av728835116/",
         language: "auto",
+        transport: "direct-cdn",
       });
       assert.equal(generations.length, before + 1);
       assert.match(generations.at(-1).messages[1].content, /Captured final/);

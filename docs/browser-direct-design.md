@@ -1,6 +1,14 @@
 # readvideo：链接到文章的浏览器直连设计
 
-状态：2026-10-24 设计修订。采用用户提供并已验证的方案。下载关键前提已在真实 Chrome 复现；本文中的完整产品流程、并发下载、持久化恢复仍属于待实现及验收项。
+状态：2026-10-24 实施中。已实现并验证隐藏下载页、4 路分块下载、重试、IndexedDB 分块缓存、转写窗口缓存及 16 kHz 解码。线上 Cloudflare 解析仍未通过验收，完整链接到文章流程尚未开放为默认路径。
+
+## 本次实测进展
+
+- 41 分 52 秒样本 `BV1QAnB67EL3`：真实 Chrome、生产下载模块、无媒体模拟，20,627,701 字节音轨下载 4,908 ms，解码 6,587 ms，解码时长 2,511.893 秒，共 105 个窗口。缓存再次读取 78 ms，完整文件 SHA-256 一致。
+- 118 秒样本 `BV1VS4y1t7st`：真实 CPU Whisper 转写首次全流程 42,028 ms，5 次推理、26 条字幕；重试 2,384 ms，0 次新推理，字幕数和字符数一致。
+- 上述解析地址来自本机 Node 测试准备，音轨由真实浏览器从 CDN 获取；不能据此宣称 Cloudflare 解析成功。未调用文章模型，长样本尚未进行完整 ASR，缓存测试不等于强制关闭浏览器后的恢复验收。
+- [完整下载记录](evaluation-data/bilibili-direct-full.json)、[CPU 转写记录](evaluation-data/bilibili-direct-asr.json)。可复现命令：`node tests/direct-full-live.mjs`、`node tests/direct-asr-live.mjs`。它们需要网络和 Chrome，故不加入离线单元测试。
+- 参考 [yt-dlp 的 Bilibili 提取实现](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py)核对独立音轨、字幕与 WBI 请求。Cloudflare 412 与浏览器下载速度分别验证，不用已有下载器的存在替代线上成功证据。
 
 ## 用户只做什么
 

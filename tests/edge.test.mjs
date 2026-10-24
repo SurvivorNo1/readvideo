@@ -22,6 +22,14 @@ const post = (body) =>
     body: JSON.stringify(body),
   });
 
+test('direct transport returns same-track CDN candidates without fetching media',async()=>{
+  const f=fixtures(),worker=createWorker({fetcher:f.fetcher});
+  const response=await worker.fetch(post({url:'https://www.bilibili.com/video/av728835116/',transport:'direct-cdn'}),env);
+  assert.equal(response.status,200);const body=await response.json();
+  assert.equal(body.transport,'direct-cdn');assert.equal(body.urls[0],'https://cdn.bilivideo.com/audio.m4s');
+  assert.ok(!f.calls.some(c=>c.url.hostname.endsWith('bilivideo.com')));
+});
+
 test("public page JSON is parsed as data, including nested braces and escaped strings", () => {
   assert.deepEqual(
     pageJSON(
@@ -80,6 +88,11 @@ test("browser public metadata can skip Worker metadata requests while identity a
       400,
     );
   }
+});
+test("audio rejection retains the legacy playback failure when signing also fails", async () => {
+  const worker=createWorker({fetcher:async()=>new Response(null,{status:412})});
+  const response=await worker.fetch(post({url:'https://www.bilibili.com/video/av728835116/',public_info:{aid:728835116,bvid:'BV1VS4y1t7st',cid:785724558,part:1,duration:118,title:'Public source'}}),env);
+  const body=await response.json(); assert.equal(response.status,502);assert.match(body.error,/playurl.*412/);assert.match(body.error,/nav.*412/);
 });
 test("a public video page supplies metadata and audio when the metadata API rejects requests", async () => {
   const fixture = fixtures();

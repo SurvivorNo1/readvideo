@@ -26,6 +26,7 @@ test("edge client requires HTTPS, sends only video identity/language and validat
   assert.deepEqual(body, {
     url: "https://www.bilibili.com/video/av1/",
     language: "zh",
+    transport: "direct-cdn",
   });
   assert.equal(source.kind, "media");
   assert.equal(source.transport, "cloudflare");

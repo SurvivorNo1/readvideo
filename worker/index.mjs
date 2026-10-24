@@ -466,13 +466,17 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
       qn: "16",
       fourk: "0",
     };
-    let play = embeddedPlay;
+    let play = embeddedPlay, playFailure;
     if (!play?.data?.dash?.audio?.length)
       try {
         play = await readApi("/x/player/playurl", params);
-      } catch {}
+      } catch (error) { playFailure = error; }
     if (play?.code !== 0 || !play.data?.dash?.audio?.length) {
-      play = await signedApi("/x/player/wbi/playurl", params);
+      try { play = await signedApi("/x/player/wbi/playurl", params); }
+      catch (error) {
+        const first = playFailure instanceof Failure ? playFailure.message : `公开音轨接口未提供音轨（code ${Number.isSafeInteger(play?.code) ? play.code : "unknown"}）。`;
+        throw new Failure(502, `${first} 签名音轨回退：${error instanceof Failure ? error.message : "暂不可用。"}`);
+      }
     }
     const audios = (play?.data?.dash?.audio || [])
       .filter((a) => !a.mimeType || a.mimeType.startsWith("audio/mp4"))
@@ -483,6 +487,18 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
         ...(a.backupUrl || a.backup_url || []),
       ])
       .filter(Boolean);
+    if (input.transport === 'direct-cdn') {
+      // Mirrors must belong to the same representation, never mix audio bitrates.
+      for (const audio of audios) {
+        const candidates=[audio.baseUrl||audio.base_url,...(audio.backupUrl||audio.backup_url||[])];
+        const direct=[];
+        for(const candidate of candidates)try{direct.push(mediaTarget(candidate).href);}catch{}
+        if(direct.length)return {kind:'media',transport:'direct-cdn',title,source_url:input.url,
+          id:`bilibili:${bvid}:${page.cid}:${identity.part}:${audio.id||0}:${audio.bandwidth||0}`,
+          urls:[...new Set(direct)].slice(0,4),duration:Number(page.duration||data.duration),maximum_bytes:128000000};
+      }
+      throw new Failure(422,'没有找到可直连的独立音轨。');
+    }
     let selected;
     for (const url of urls.slice(0, 4)) {
       try {

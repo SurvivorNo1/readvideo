@@ -6,6 +6,8 @@ import {
   wavBlob,
 } from "./audio.mjs";
 import { decodeMedia, decodeAudioBytes } from "./source.mjs";
+import { fetchDirectAudio } from "./direct-audio.mjs";
+import { openDownloadCache } from './download.mjs';
 export class ReadingSession {
   constructor({
     url,
@@ -30,6 +32,7 @@ export class ReadingSession {
     this.onProgress = onProgress;
     this.elapsed = 0;
     this.closed = false;
+    this.downloadController = new AbortController();
     this.ended = false;
     this.modelReady = Promise.resolve();
     this.transcript = {
@@ -48,11 +51,15 @@ export class ReadingSession {
     this.asr.backend = backend;
     this.queue = new SerialQueue(
       async (job) => {
+        let saved;
+        const checkpoint=this.audioIdentity?`${this.audioIdentity}:${job.offset}:${job.keepUntil}`:null;
+        try{if(checkpoint)saved=await this.checkpoints?.get(checkpoint);}catch{}
         await this.modelReady;
         let power = 0;
         for (const sample of job.audio) power += sample * sample;
         if (power === 0) return;
-        const result = await this.asr.recognize(job, this.language);
+        const result = saved && Array.isArray(saved.chunks) ? saved : await this.asr.recognize(job, this.language);
+        try{if(checkpoint&&!saved)await this.checkpoints?.put(checkpoint,result);}catch{}
         const shifted = {
           offset: job.offset + this.offset,
           keepFrom: job.keepFrom + this.offset,
@@ -126,7 +133,15 @@ export class ReadingSession {
     this.transcript.timeline = "media";
     this.modelReady = this.asr.load();
     this.modelReady.catch(() => {});
-    const jobs = await decodeMedia(mediaURL, progress);
+    let jobs;
+    if(typeof mediaURL === 'object') {
+      const bytes=await fetchDirectAudio(mediaURL,progress,this.downloadController.signal);
+      const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+      this.audioIdentity=`asr:whisper-tiny-v1:24-2:${this.language}:${digest}`;
+      try{this.checkpoints=await openDownloadCache();}catch{}
+      progress('音轨已完整下载 · 正在本机解码',26);
+      jobs=await decodeAudioBytes(bytes);
+    } else jobs=await decodeMedia(mediaURL,progress);
     this.elapsed = jobs.at(-1)?.keepUntil || 0;
     this.ended = true;
     for (const job of jobs) this.add(job);
@@ -153,7 +168,7 @@ export class ReadingSession {
     this.finishing = (async () => {
       this.ended = true;
       await this.capture?.stop();
-      this.status("采集已停止，正在处理剩余音频。");
+      this.status(this.transcript.timeline==='media'?'完整音轨已就绪，正在本机转写。':'采集已停止，正在处理剩余音频。');
       try {
         await this.modelReady;
         await this.queue.drain();
@@ -164,6 +179,7 @@ export class ReadingSession {
         this.transcript.partial = false;
         this.onTranscript(this.transcript);
         this.asr.dispose();
+        this.checkpoints?.close();
         await this.onFinished(this.transcript);
       } catch (error) {
         this.status();
@@ -203,7 +219,9 @@ export class ReadingSession {
   }
   close() {
     this.closed = true;
+    this.downloadController.abort();
     this.capture?.stop();
     this.asr.dispose();
+    this.checkpoints?.close();
   }
 }

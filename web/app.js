@@ -454,7 +454,7 @@ async function run(generate = true) {
         const current = configureSession(url);
         try {
           if (source.title) current.transcript.title = source.title;
-          await current.startMedia(progress, source.url);
+          await current.startMedia(progress, source.transport === 'direct-cdn' ? source : source.url);
         } catch (error) {
           if (current.queue.jobs.length) throw error;
           current.close();

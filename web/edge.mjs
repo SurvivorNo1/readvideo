@@ -1,3 +1,4 @@
+import { audioURL } from './download.mjs';
 export function edgeEndpoint(value) {
   if (!value) return "";
   let url;
@@ -34,7 +35,7 @@ export async function resolveThroughEdge(
     mode: "cors",
     credentials: "omit",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: video, language }),
+    body: JSON.stringify({ url: video, language, transport: 'direct-cdn' }),
     signal: AbortSignal.timeout(60000),
   });
   if (!response.ok)
@@ -82,6 +83,10 @@ export async function resolveThroughEdge(
     };
   }
   if (data.kind === "media") {
+    if (data.transport === 'direct-cdn') {
+      if(typeof data.id!=='string'||data.id.length>200||!Array.isArray(data.urls)||!data.urls.length||data.urls.length>4)throw Error('音轨响应无效。');
+      return {kind:'media',transport:'direct-cdn',title,source_url:video,id:data.id,urls:data.urls.map(audioURL)};
+    }
     let url;
     try {
       url = new URL(data.url);

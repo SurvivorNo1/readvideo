@@ -1,0 +1,21 @@
+{
+  "testedAt": "2026-10-24T15:45:42.087Z",
+  "sample": "BV1VS4y1t7st",
+  "environment": "real Chrome, CPU Whisper, direct CDN downloader; metadata resolved by Node; no adapters, no LLM",
+  "cold": {
+    "ms": 42028,
+    "inferenceCalls": 5,
+    "cues": 26,
+    "duration": 118.328625,
+    "characters": 1748,
+    "partial": false
+  },
+  "resumed": {
+    "ms": 2384,
+    "inferenceCalls": 0,
+    "cues": 26,
+    "duration": 118.328625,
+    "characters": 1748,
+    "partial": false
+  }
+}

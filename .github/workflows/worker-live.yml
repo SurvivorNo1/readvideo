@@ -11,6 +11,11 @@ on:
         required: false
         default: false
         type: boolean
+      direct:
+        description: Verify metadata-only CDN resolution (no audio relay)
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 jobs:
@@ -26,6 +31,7 @@ jobs:
         env:
           READVIDEO_WORKER_URL: ${{ inputs.worker_url }}
           READVIDEO_BROWSER_METADATA: ${{ inputs.browser_metadata }}
+          READVIDEO_DIRECT: ${{ inputs.direct }}
         run: node tests/worker-live.mjs
       - uses: actions/upload-artifact@v4
         if: always()
