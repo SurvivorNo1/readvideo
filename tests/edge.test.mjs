@@ -7,6 +7,7 @@ import {
   parseRange,
   signTicket,
   verifyTicket,
+  pageJSON,
 } from "../worker/index.mjs";
 const origin = "https://survivorno1.github.io";
 const env = {
@@ -20,6 +21,130 @@ const post = (body) =>
     headers: { Origin: origin, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
+test("public page JSON is parsed as data, including nested braces and escaped strings", () => {
+  assert.deepEqual(
+    pageJSON(
+      '<script>window.__INITIAL_STATE__ = {"videoData":{"title":"a } b \\\" c","pages":[{"cid":9}]}};</script>',
+      "__INITIAL_STATE__",
+    ).videoData.pages,
+    [{ cid: 9 }],
+  );
+  assert.equal(
+    pageJSON(
+      "<script>window.__INITIAL_STATE__ = alert(1)</script>",
+      "__INITIAL_STATE__",
+    ),
+    null,
+  );
+});
+test("a public video page supplies metadata and audio when the metadata API rejects requests", async () => {
+  const fixture = fixtures();
+  const worker = createWorker({
+    fetcher: async (value, options) => {
+      const u = new URL(value);
+      if (u.pathname === "/x/web-interface/view")
+        return new Response(null, { status: 412 });
+      if (u.hostname === "www.bilibili.com")
+        return new Response(
+          '<script>window.__INITIAL_STATE__={"videoData":{"title":"Public page source","bvid":"BV1VS4y1t7st","cid":9,"pages":[{"cid":9,"duration":118}]}};</script><script>window.__playinfo__={"code":0,"data":{"dash":{"audio":[{"baseUrl":"https://cdn.bilivideo.com/audio.m4s","bandwidth":64000}]}}};</script>',
+        );
+      return fixture.fetcher(value, options);
+    },
+    now: () => 1000,
+  });
+  const response = await worker.fetch(
+    post({ url: "https://www.bilibili.com/video/av728835116/" }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).title, "Public page source");
+  assert.equal(
+    fixture.calls.some((c) => c.url.pathname.endsWith("playurl")),
+    false,
+  );
+});
+test("anonymous platform initialization can recover a rejected metadata request without accepting user cookies", async () => {
+  const fixture = fixtures();
+  const worker = createWorker({
+    fetcher: async (value, options) => {
+      const u = new URL(value);
+      if (u.pathname === "/x/frontend/finger/spi")
+        return Response.json({ code: 0, data: { b_3: "public-anonymous-id" } });
+      if (
+        u.pathname === "/x/web-interface/view" &&
+        !options.headers.has("Cookie")
+      )
+        return new Response(null, { status: 412 });
+      if (u.hostname === "api.bilibili.com")
+        assert.equal(
+          options.headers.get("Cookie"),
+          "buvid3=public-anonymous-id",
+        );
+      return fixture.fetcher(value, options);
+    },
+  });
+  assert.equal(
+    (
+      await worker.fetch(
+        post({ url: "https://www.bilibili.com/video/av1/" }),
+        env,
+      )
+    ).status,
+    200,
+  );
+});
+test("signed metadata detail recovers legacy API denial and signed audio is used", async () => {
+  const fixture = fixtures();
+  let signedCalls = 0;
+  const worker = createWorker({
+    fetcher: async (value, options) => {
+      const u = new URL(value);
+      if (
+        u.pathname === "/x/web-interface/view" ||
+        u.pathname === "/x/player/playurl"
+      )
+        return new Response(null, { status: 412 });
+      if (u.pathname === "/x/frontend/finger/spi")
+        return Response.json({ code: 0, data: { b_3: "anonymous" } });
+      if (u.pathname === "/x/web-interface/nav")
+        return Response.json({
+          code: -101,
+          data: {
+            wbi_img: {
+              img_url:
+                "https://i0.hdslb.com/bfs/wbi/" + "a".repeat(32) + ".png",
+              sub_url:
+                "https://i0.hdslb.com/bfs/wbi/" + "b".repeat(32) + ".png",
+            },
+          },
+        });
+      if (u.pathname === "/x/web-interface/wbi/view/detail") {
+        assert.match(u.searchParams.get("w_rid"), /^[a-f0-9]{32}$/);
+        signedCalls++;
+        return Response.json({
+          code: 0,
+          data: {
+            View: {
+              bvid: "BV1VS4y1t7st",
+              cid: 9,
+              title: "Signed source",
+              pages: [{ cid: 9, duration: 118 }],
+            },
+          },
+        });
+      }
+      return fixture.fetcher(value, options);
+    },
+  });
+  const response = await worker.fetch(
+    post({ url: "https://www.bilibili.com/video/av728835116/" }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(signedCalls, 1);
+  assert.equal((await response.json()).title, "Signed source");
+});
 test("Worker restricts video IDs, media destinations and byte ranges", () => {
   assert.deepEqual(
     videoIdentity("https://www.bilibili.com/video/av728835116/?p=2"),
@@ -44,6 +169,37 @@ test("Worker restricts video IDs, media destinations and byte ranges", () => {
   assert.deepEqual(parseRange("bytes=0-1023"), { start: 0, end: 1023 });
   assert.throws(() => parseRange("bytes=0-1,5-6"));
   assert.throws(() => parseRange("bytes=10-2"));
+});
+test("public metadata JSONP is parsed without executing response scripts", async () => {
+  const fixture = fixtures();
+  const worker = createWorker({
+    fetcher: async (value, options) => {
+      const u = new URL(value);
+      if (u.pathname === "/x/web-interface/view") {
+        assert.equal(u.searchParams.get("callback"), "__readvideoPublic");
+        return new Response(
+          "__readvideoPublic(" +
+            JSON.stringify({
+              code: 0,
+              data: {
+                bvid: "BV1VS4y1t7st",
+                cid: 9,
+                title: "JSONP source",
+                pages: [{ cid: 9, duration: 118 }],
+              },
+            }) +
+            ");",
+        );
+      }
+      return fixture.fetcher(value, options);
+    },
+  });
+  const response = await worker.fetch(
+    post({ url: "https://www.bilibili.com/video/av1/" }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).title, "JSONP source");
 });
 test("tickets are authenticated, expire, and cannot authorize a different destination", async () => {
   const token = await signTicket(
@@ -134,8 +290,14 @@ function fixtures({ subtitle = false, redirect = false } = {}) {
   };
 }
 test("upstream rejection identifies the failing API without exposing its body", async () => {
-  const worker = createWorker({fetcher: async () => new Response("private upstream detail", {status: 412})});
-  const response = await worker.fetch(post({url: "https://www.bilibili.com/video/av1/"}), env);
+  const worker = createWorker({
+    fetcher: async () =>
+      new Response("private upstream detail", { status: 412 }),
+  });
+  const response = await worker.fetch(
+    post({ url: "https://www.bilibili.com/video/av1/" }),
+    env,
+  );
   assert.equal(response.status, 502);
   const body = await response.json();
   assert.match(body.error, /view.*412/);
@@ -171,9 +333,17 @@ test("one resolve call returns audio ticket; media streams with range and never 
   }
 });
 test("a partial upstream response cannot masquerade as a complete audio download", async () => {
-  const worker = createWorker({fetcher: fixtures().fetcher, now: () => 1000});
-  const token = await signTicket({url: "https://cdn.bilivideo.com/audio.m4s", exp: 2000}, env.MEDIA_SECRET);
-  const response = await worker.fetch(new Request("https://edge.example/media?ticket=" + token, {headers: {Origin: origin}}), env);
+  const worker = createWorker({ fetcher: fixtures().fetcher, now: () => 1000 });
+  const token = await signTicket(
+    { url: "https://cdn.bilivideo.com/audio.m4s", exp: 2000 },
+    env.MEDIA_SECRET,
+  );
+  const response = await worker.fetch(
+    new Request("https://edge.example/media?ticket=" + token, {
+      headers: { Origin: origin },
+    }),
+    env,
+  );
   assert.equal(response.status, 502);
 });
 test("captions take priority, and expired tickets, unexpected origins, rate limits and unsafe redirects fail closed", async () => {

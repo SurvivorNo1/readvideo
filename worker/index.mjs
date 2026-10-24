@@ -1,5 +1,32 @@
 import { createHash } from "node:crypto";
 const MAX_AUDIO = 32_000_000;
+// Extract JSON data only; never execute source-page JavaScript.
+export function pageJSON(html, name) {
+  const marker = new RegExp(`(?:window\\.)?${name}\\s*=\\s*`).exec(html);
+  if (!marker) return null;
+  const start = marker.index + marker[0].length;
+  if (html[start] !== "{") return null;
+  let depth = 0,
+    quoted = false,
+    escaped = false;
+  for (let i = start; i < html.length; i++) {
+    const c = html[i];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) {
+      try {
+        return JSON.parse(html.slice(start, i + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 class Failure extends Error {
   constructor(status, message) {
     super(message);
@@ -186,20 +213,34 @@ function wbi(params, img, sub) {
   return query;
 }
 export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
-  async function api(path, params) {
+  async function api(path, params, anonymousCookie = "") {
     const url = new URL("https://api.bilibili.com" + path);
     url.search = new URLSearchParams(params);
+    const jsonp = ["/x/web-interface/view", "/x/web-interface/nav"].includes(
+      path,
+    );
+    if (jsonp) {
+      url.searchParams.set("jsonp", "jsonp");
+      url.searchParams.set("callback", "__readvideoPublic");
+    }
+    const headers = platformHeaders();
+    if (anonymousCookie) headers.set("Cookie", anonymousCookie);
     const response = await fetcher(url.href, {
-      headers: platformHeaders(),
+      headers,
       redirect: "manual",
       signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) {
       await response.body?.cancel();
-      throw new Failure(502, `平台接口 ${path.split("/").pop()} 拒绝读取（HTTP ${response.status}），请稍后重试。`);
+      throw new Failure(
+        502,
+        `平台接口 ${path.split("/").pop()} 拒绝读取（HTTP ${response.status}），请稍后重试。`,
+      );
     }
     try {
-      return JSON.parse(await limitedText(response));
+      const text = (await limitedText(response)).trim();
+      const wrapped = jsonp && /^__readvideoPublic\(([\s\S]*)\);?$/.exec(text);
+      return JSON.parse(wrapped ? wrapped[1] : text);
     } catch (e) {
       if (e instanceof Failure) throw e;
       throw new Failure(502, "平台响应暂不可解析。");
@@ -229,8 +270,87 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
   async function resolve(input, request, env) {
     const identity = videoIdentity(input.url),
       query = identity.aid ? { aid: identity.aid } : { bvid: identity.bvid };
-    const view = await api("/x/web-interface/view", query),
-      data = view?.data;
+    let view,
+      embeddedPlay,
+      anonymousCookie = "",
+      initializationError;
+    const readApi = (path, params) => api(path, params, anonymousCookie);
+    let wbiKeys;
+    const signedApi = async (path, params) => {
+      if (!wbiKeys) {
+        const nav = await readApi("/x/web-interface/nav", {});
+        const keys = nav.data?.wbi_img;
+        const extract = (value) =>
+          new URL(value).pathname.split("/").pop().split(".")[0];
+        if (!keys?.img_url || !keys?.sub_url)
+          throw new Failure(502, "平台签名信息暂不可用。");
+        wbiKeys = [extract(keys.img_url), extract(keys.sub_url)];
+      }
+      return readApi(
+        path,
+        Object.fromEntries(
+          wbi({ ...params, wts: Math.round(now() / 1000) }, ...wbiKeys),
+        ),
+      );
+    };
+    try {
+      view = await readApi("/x/web-interface/view", query);
+    } catch (apiFailure) {
+      // A platform-issued anonymous session is independent of the visitor's account.
+      try {
+        const session = await api("/x/frontend/finger/spi", {});
+        const id = session.data?.b_3;
+        if (typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+          anonymousCookie = "buvid3=" + id;
+          view = await readApi("/x/web-interface/view", query);
+        }
+      } catch (error) {
+        initializationError = error;
+      }
+      if (!view?.data) {
+        try {
+          const detail = await signedApi(
+            "/x/web-interface/wbi/view/detail",
+            query,
+          );
+          if (detail.code === 0 && detail.data?.View)
+            view = { code: 0, data: detail.data.View };
+        } catch (error) {
+          initializationError = error;
+        }
+      }
+      if (!view?.data) {
+        const video = new URL(
+          `https://www.bilibili.com/video/${identity.bvid || "av" + identity.aid}/`,
+        );
+        if (identity.part > 1) video.searchParams.set("p", identity.part);
+        const response = await fetcher(video.href, {
+          headers: platformHeaders(),
+          redirect: "manual",
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new Failure(
+            502,
+            `${apiFailure.message} 视频页读取亦被拒绝（HTTP ${response.status}）。${initializationError ? " 匿名初始化：" + initializationError.message : ""}`,
+          );
+        }
+        const html = await limitedText(response);
+        const state = pageJSON(html, "__INITIAL_STATE__");
+        const data = state?.videoData;
+        if (!data?.bvid || !data?.cid) throw apiFailure;
+        view = { code: 0, data };
+        // The page's selected cid must match before its embedded audio is used.
+        const page = data.pages?.[identity.part - 1];
+        if (
+          (identity.part === 1 && (!page || page.cid === data.cid)) ||
+          page?.cid === state.cid
+        )
+          embeddedPlay = pageJSON(html, "__playinfo__");
+      }
+    }
+    const data = view?.data;
     if (view.code !== 0 || !data)
       throw new Failure(422, "无法读取该视频；可能已下架或存在访问限制。");
     const page =
@@ -246,7 +366,7 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
     let tracks = identity.part === 1 ? data.subtitle?.list || [] : [];
     if (!tracks.length) {
       try {
-        const player = await api("/x/player/v2", { bvid, cid: page.cid });
+        const player = await readApi("/x/player/v2", { bvid, cid: page.cid });
         tracks = player.data?.subtitle?.subtitles || [];
       } catch {}
     }
@@ -305,27 +425,13 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
       qn: "16",
       fourk: "0",
     };
-    let play;
-    try {
-      play = await api("/x/player/playurl", params);
-    } catch {}
+    let play = embeddedPlay;
+    if (!play?.data?.dash?.audio?.length)
+      try {
+        play = await readApi("/x/player/playurl", params);
+      } catch {}
     if (play?.code !== 0 || !play.data?.dash?.audio?.length) {
-      const nav = await api("/x/web-interface/nav", {}),
-        keys = nav.data?.wbi_img;
-      const extract = (url) =>
-        new URL(url).pathname.split("/").pop().split(".")[0];
-      if (!keys?.img_url || !keys?.sub_url)
-        throw new Failure(422, "平台暂未提供可用音轨，请稍后重试。");
-      play = await api(
-        "/x/player/wbi/playurl",
-        Object.fromEntries(
-          wbi(
-            { ...params, wts: Math.round(now() / 1000) },
-            extract(keys.img_url),
-            extract(keys.sub_url),
-          ),
-        ),
-      );
+      play = await signedApi("/x/player/wbi/playurl", params);
     }
     const audios = (play?.data?.dash?.audio || [])
       .filter((a) => !a.mimeType || a.mimeType.startsWith("audio/mp4"))
@@ -442,7 +548,10 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
             await upstream.body?.cancel();
             throw new Failure(502, "平台拒绝音轨下载，请重新读取链接。");
           }
-          if (!range && (upstream.status !== 200 || upstream.headers.has("Content-Range"))) {
+          if (
+            !range &&
+            (upstream.status !== 200 || upstream.headers.has("Content-Range"))
+          ) {
             await upstream.body?.cancel();
             throw new Failure(502, "平台未提供完整音轨，请重新读取链接。");
           }

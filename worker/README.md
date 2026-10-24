@@ -33,6 +33,10 @@ GitHub Pages does not execute this Worker source.
 - The Worker receives the submitted video link, recognition language and network
   request metadata, and carries audio traffic. It receives no Bilibili cookies or
   LLM API key. Bilibili login in another tab does not authenticate Worker requests.
+- If the public metadata request is rejected, it tries a platform-issued anonymous
+  session, signed WBI metadata and embedded JSON in the public video page. Anonymous
+  identifiers live only within that resolution request and are not user login
+  credentials. Public JSONP and page JSON are parsed as data, never executed.
 - Public videos can still be refused based on platform policy, region or network.
   Restricted/paid content and account login are not implemented.
 
@@ -45,3 +49,13 @@ It saves only sanitized metadata. It does not prove browser ASR or article
 generation. On 2026-10-24 the deployed service returned health 200 but resolve 502
 for the sample: the platform rejected a Worker request. Link-only production
 acceptance remains incomplete; no speed result is claimed for this route.
+
+The owner completed Wrangler OAuth and the existing service was updated on
+2026-10-24. Live checks identified HTTP 412 on video metadata, public video HTML
+and the `nav` signature-metadata API. Platform anonymous initialization alone did
+not recover access. The latest public-protocol check is
+[40087404922](https://github.com/SurvivorNo1/readvideo/actions/runs/40087404922).
+An explicit Hong Kong placement hint was accepted by deployment but did not
+produce a passing test; the execution location was not recorded, so this is not
+evidence that every Asian Cloudflare location is blocked. That experimental hint
+was removed. None of these failed network tests establish audio download speed.

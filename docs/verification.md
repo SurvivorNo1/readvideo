@@ -38,6 +38,19 @@ This verifies the real browser-direct API and current article prompt, separately
 
 ### Optional Cloudflare transport, 2026-10-24
 
+Owner OAuth and deployment succeeded. Additional red-first regressions cover
+public-page JSON extraction without script execution, anonymous platform session
+initialization, WBI metadata fallback and public JSONP parsing. Full unit coverage
+now contains 35 passing cases; the unchanged frontend had 20 passing deterministic
+browser scenarios. These remain fixture tests, not platform acceptance.
+
+Live runs 40086358003, 40086543877, 40086904829, 40087105136 and 40087404922
+identified HTTP 412 on metadata, public HTML and signature-key metadata requests.
+An anonymous identifier was issued, but retrying video metadata was still refused.
+The successful local Node public-page probe is a different network and does not
+validate the Worker or browser app route. No audio was downloaded through the
+Cloudflare path, and no transcript/article result is claimed from these runs.
+
 The initial transport implementation passed 28 unit tests and 20 deterministic
 browser scenarios, including paste-link → Worker response → local ASR → article
 with explicit network/model adapters and no playback/import. A subsequent
