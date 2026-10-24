@@ -10,6 +10,11 @@ Paste a link. Read accessible captions first. Otherwise explicitly share the vid
 
 ## Workflow
 
+An optional Cloudflare transport is under development for public Bilibili metadata
+and audio relay, with ASR on the visitor's device and no personal server. Live
+health passed, but the platform rejected resolution; the default remains disabled
+pending real acceptance. See [deployment and verification status](worker/README.md).
+
 An optional **B站原页取音轨** guide provides a readable, self-contained script to run manually in a Bilibili video's Console. It reads public player audio metadata, never exports cookies, and prepares an M4A save link using up to four range requests or a bounded single-stream fallback. Return to the app and import the audio for local Whisper inference; no LLM key is needed until article generation. This desktop manual alternative requires no extension, but is not automatic link-only extraction. Native save completion in the user's managed Chrome remains unverified; real source-page bytes and actual CPU file inference are documented separately.
 
 Configure your API, paste a link, choose a reading depth, then click **读取并生成**. Readable captions skip ASR. Supported YouTube/Bilibili links offer an inline player: explicitly share this readvideo tab's audio, then play from the intended start. Restricted embeds can fall back to the original site and sharing that video's tab. Stop when finished; the app drains the remaining queue before generating. Search, copy or export the full text. Embedded playback and full audio capture require actual platform validation; an iframe alone is not proof of success.

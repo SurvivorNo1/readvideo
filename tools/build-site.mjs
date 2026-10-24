@@ -13,6 +13,8 @@ export const APP_FILES = [
   "source.mjs",
   "bilibili.mjs",
   "collector.mjs",
+  "edge.mjs",
+  "deployment.mjs",
   "asr-worker.mjs",
   "audio-worklet.js",
 ];

@@ -9,6 +9,9 @@ import {
 import { discoverSource, embeddedPlayer } from "./source.mjs";
 import { ReadingSession } from "./session.mjs";
 import { collectorScript } from "./collector.mjs";
+import { bilibiliVideo } from "./bilibili.mjs";
+import { resolveThroughEdge, edgeEndpoint } from "./edge.mjs";
+import { DEFAULT_EDGE_URL } from "./deployment.mjs";
 const $ = (selector) => document.querySelector(selector);
 const make = (tag, cls, text) => {
   const node = document.createElement(tag);
@@ -401,7 +404,20 @@ async function run(generate = true) {
       return;
     }
     progress("优先检查可直接读取的字幕", 5);
-    const source = await discoverSource(url, $("#caption-language").value);
+    let source;
+    if (bilibiliVideo(url) && config.edge_url) {
+      progress("正在获取字幕或完整音轨，无需播放", 8);
+      try {
+        source = await resolveThroughEdge(
+          url,
+          $("#caption-language").value,
+          config.edge_url,
+        );
+      } catch (error) {
+        showError(error);
+      }
+    }
+    source ||= await discoverSource(url, $("#caption-language").value);
     preparedTitle = source.title || "";
     if (source.reason === "part-unavailable")
       throw Error("没有找到这个分P，请检查链接中的 p 参数。");
@@ -424,7 +440,11 @@ async function run(generate = true) {
         preparedTitle || "让浏览器，听懂这段视频。";
       $("#recovery-actions").hidden = true;
       $("#open-video").href = url;
-      preparePlayer(url);
+      if (source.kind === "media") {
+        currentPlayer = null;
+        $("#inline-player").hidden = true;
+        $("#video-frame").removeAttribute("src");
+      } else preparePlayer(url);
       $("#capture-start").disabled = false;
       if (source.kind === "media") {
         $("#capture-start").hidden = true;
@@ -438,6 +458,7 @@ async function run(generate = true) {
         } catch (error) {
           if (current.queue.jobs.length) throw error;
           current.close();
+          preparePlayer(url);
           $("#capture-start").hidden = false;
           $("#open-video").hidden = false;
           $("#capture-help").textContent =
@@ -537,6 +558,7 @@ function readDrawer() {
     model: $("#model").value.trim(),
     api_key: $("#api-key").value.trim(),
     output_language: $("#output-language").value,
+    edge_url: $("#edge-url").value.trim(),
   };
 }
 function describeProvider() {
@@ -570,6 +592,7 @@ function openSettings() {
     ["model", "model"],
     ["api-key", "api_key"],
     ["output-language", "output_language"],
+    ["edge-url", "edge_url"],
   ])
     $("#" + id).value = config[key] || "";
   $("#advanced").open = config.provider === "custom";
@@ -591,12 +614,19 @@ $("#provider").addEventListener("change", () => {
 });
 $("#settings-form").addEventListener("submit", (event) => {
   event.preventDefault();
+  try {
+    edgeEndpoint($("#edge-url").value.trim());
+  } catch (error) {
+    $("#connection-result").hidden = false;
+    $("#connection-result").textContent = error.message;
+    return;
+  }
   config = readDrawer();
-  const { provider, base_url, model, output_language } = config;
+  const { provider, base_url, model, output_language, edge_url } = config;
   try {
     localStorage.setItem(
       "readvideo-preferences",
-      JSON.stringify({ provider, base_url, model, output_language }),
+      JSON.stringify({ provider, base_url, model, output_language, edge_url }),
     );
   } catch {}
   $("#provider-label").textContent =
@@ -828,6 +858,10 @@ async function init() {
       typeof preferences.model === "string" ? preferences.model : preset.model,
     output_language: preferences.output_language === "en" ? "en" : "zh",
     api_key: "",
+    edge_url:
+      typeof preferences.edge_url === "string"
+        ? preferences.edge_url
+        : DEFAULT_EDGE_URL,
   };
   $("#provider-label").textContent = preset.name + " · 自带 API";
 }

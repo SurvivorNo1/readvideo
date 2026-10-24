@@ -410,6 +410,19 @@
         <details id="advanced">
           <summary>高级设置</summary>
           <label class="field"
+            >视频解析服务（可选）<input
+              id="edge-url"
+              type="url"
+              aria-label="视频解析服务"
+              autocomplete="off"
+              placeholder="使用网站默认的 Cloudflare Worker"
+          /></label>
+          <p class="field-note">
+            仅向视频服务发送链接和字幕语言；音轨由 Cloudflare
+            转发，转写仍在本机。模型 Key
+            不发送给视频服务。清空此项可使用原有网页读取方式。
+          </p>
+          <label class="field"
             >Base URL<input
               id="base-url"
               type="url"

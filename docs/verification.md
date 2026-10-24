@@ -36,6 +36,23 @@ This verifies the real browser-direct API and current article prompt, separately
 
 ## Data and deployment
 
+### Optional Cloudflare transport, 2026-10-24
+
+The initial transport implementation passed 28 unit tests and 20 deterministic
+browser scenarios, including paste-link → Worker response → local ASR → article
+with explicit network/model adapters and no playback/import. A subsequent
+red-first regression adds upstream API/status diagnostics without response-body
+disclosure. These tests are not real Cloudflare-to-platform acceptance.
+
+The independently executed live check
+[40084337763](https://github.com/SurvivorNo1/readvideo/actions/runs/40084337763)
+observed health HTTP 200 and resolution HTTP 502 in 418 ms, with the expected
+frontend CORS origin. The platform rejected a Worker request before audio was
+returned. No audio speed, browser inference or article result is claimed from
+this run. The public default endpoint remains unset until a successful route is
+verified. Cloudflare carries audio traffic on that route; the existing browser
+capture/import routes keep audio on the device.
+
 Model code/weights are network downloads. Audio processing runs on the device. Only requested article generation sends text to the selected provider. No credential is bundled in code, screenshots, exports or Git. Packaging uses an explicit static-file allowlist, excluding Python runtime, recordings, fixture servers and .qa/.
 
 Previous Python evidence is historical in Git and is not claimed as validation of the browser-only application.

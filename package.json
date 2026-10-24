@@ -6,11 +6,14 @@
   "scripts": {
     "dev": "node tests/static-server.mjs web 4186",
     "build": "node tools/build-site.mjs",
-    "test": "node --test tests/web-core.test.mjs tests/audio.test.mjs tests/source.test.mjs tests/site.test.mjs tests/bilibili.test.mjs tests/collector.test.mjs",
+    "test": "node --test tests/web-core.test.mjs tests/audio.test.mjs tests/source.test.mjs tests/site.test.mjs tests/bilibili.test.mjs tests/collector.test.mjs tests/edge.test.mjs tests/transport.test.mjs",
     "test:browser": "node tests/browser-web.mjs",
-    "test:asr:live": "node tests/asr-live.mjs"
+    "test:asr:live": "node tests/asr-live.mjs",
+    "worker:dev": "wrangler dev --config worker/wrangler.jsonc",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.jsonc"
   },
   "devDependencies": {
-    "playwright": "1.64.1"
+    "playwright": "1.64.1",
+    "wrangler": "4.152.0"
   }
 }

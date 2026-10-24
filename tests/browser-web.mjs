@@ -730,6 +730,85 @@ try {
     },
   );
   await step(
+    "paste Bilibili link through Worker transport, local ASR and article generation with no playback or import (adapters)",
+    async () => {
+      const bytes = await page.evaluate(async () => {
+        const { wavBlob } = await import("./audio.mjs");
+        return [
+          ...new Uint8Array(
+            await wavBlob(
+              Float32Array.from(
+                { length: 16000 },
+                (_, i) => Math.sin(i / 10) * 0.1,
+              ),
+            ).arrayBuffer(),
+          ),
+        ];
+      });
+      let sent;
+      await page.route("https://readvideo-edge.example/resolve", async (r) => {
+        const headers = {
+          "access-control-allow-origin": "*",
+          "access-control-allow-headers": "Content-Type",
+          "access-control-allow-methods": "POST, OPTIONS",
+        };
+        if (r.request().method() === "OPTIONS")
+          return r.fulfill({ status: 204, headers });
+        sent = r.request().postDataJSON();
+        return r.fulfill({
+          contentType: "application/json",
+          headers,
+          body: JSON.stringify({
+            kind: "media",
+            title: "Worker resolved video",
+            url: "https://readvideo-edge.example/media?ticket=fixture",
+          }),
+        });
+      });
+      await page.route(
+        "https://readvideo-edge.example/media?ticket=fixture",
+        (r) =>
+          r.fulfill({
+            contentType: "audio/wav",
+            headers: { "access-control-allow-origin": "*" },
+            body: Buffer.from(bytes),
+          }),
+      );
+      await page.getByRole("button", { name: "API 配置", exact: true }).click();
+      await page.locator("#advanced").evaluate((e) => (e.open = true));
+      await page
+        .getByLabel("视频解析服务", { exact: true })
+        .fill("https://readvideo-edge.example");
+      await page.getByRole("button", { name: "保存配置", exact: true }).click();
+      const before = generations.length;
+      await page
+        .getByLabel("视频链接", { exact: true })
+        .fill("https://www.bilibili.com/video/av728835116/");
+      await page
+        .getByRole("button", { name: "读取并生成", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.deepEqual(sent, {
+        url: "https://www.bilibili.com/video/av728835116/",
+        language: "auto",
+      });
+      assert.equal(generations.length, before + 1);
+      assert.match(generations.at(-1).messages[1].content, /Captured final/);
+      assert.match(
+        await page.locator("#source-title").textContent(),
+        /Worker resolved video/,
+      );
+      assert.equal(
+        await page.locator("#video-frame").getAttribute("src"),
+        null,
+      );
+      assert.equal(await page.locator("#capture-start").isVisible(), false);
+      assert.equal(await page.locator("#error").isVisible(), false);
+    },
+  );
+  await step(
     "subtitle imports require no model or application server",
     async () => {
       const file = ".qa/web-import.srt";

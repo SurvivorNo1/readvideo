@@ -1,0 +1,108 @@
+export function edgeEndpoint(value) {
+  if (!value) return "";
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw Error("视频解析服务地址无效。");
+  }
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    (url.protocol !== "https:" &&
+      !(
+        url.protocol === "http:" &&
+        ["127.0.0.1", "localhost"].includes(url.hostname)
+      ))
+  )
+    throw Error("视频解析服务需使用不含账号密码的 HTTPS 地址。");
+  if (url.pathname !== "/") throw Error("请填写视频解析服务的根地址。");
+  return url.origin;
+}
+export async function resolveThroughEdge(
+  video,
+  language,
+  endpoint,
+  fetcher = fetch,
+) {
+  const base = edgeEndpoint(endpoint);
+  if (!base) throw Error("尚未配置视频解析服务。");
+  const response = await fetcher(base + "/resolve", {
+    method: "POST",
+    mode: "cors",
+    credentials: "omit",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: video, language }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!response.ok)
+    throw Error(
+      response.status === 429
+        ? "视频解析请求较频繁，请稍后再试。"
+        : "视频解析服务暂时无法读取该链接，可重试或使用下方备用方式。",
+    );
+  const text = await response.text();
+  if (text.length > 3_000_000) throw Error("视频解析响应超过上限。");
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw Error("视频解析响应无效。");
+  }
+  const title =
+    typeof data.title === "string" ? data.title.slice(0, 1000) : "B站视频";
+  if (data.kind === "captions" && Array.isArray(data.segments)) {
+    const segments = data.segments.map((c) => ({
+      start: Number(c.start),
+      end: Number(c.end),
+      text: typeof c.text === "string" ? c.text : "",
+    }));
+    if (
+      !segments.length ||
+      segments.some(
+        (c) =>
+          !Number.isFinite(c.start) ||
+          !Number.isFinite(c.end) ||
+          c.start < 0 ||
+          c.end < c.start ||
+          !c.text.trim(),
+      )
+    )
+      throw Error("视频字幕响应无效。");
+    return {
+      kind: "captions",
+      url: video,
+      title,
+      segments,
+      language: data.language || "unknown",
+      automatic: !!data.automatic,
+      source: "cloudflare-captions",
+    };
+  }
+  if (data.kind === "media") {
+    let url;
+    try {
+      url = new URL(data.url);
+    } catch {
+      throw Error("音轨响应无效。");
+    }
+    if (
+      url.origin !== base ||
+      url.pathname !== "/media" ||
+      !url.searchParams.get("ticket") ||
+      url.username ||
+      url.password
+    )
+      throw Error("音轨响应来源无效。");
+    return {
+      kind: "media",
+      url: url.href,
+      title,
+      source_url: video,
+      transport: "cloudflare",
+    };
+  }
+  throw Error("视频解析响应无效。");
+}
