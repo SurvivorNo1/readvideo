@@ -1,0 +1,28 @@
+name: Worker live network check
+on:
+  workflow_dispatch:
+    inputs:
+      worker_url:
+        description: Public Cloudflare workers.dev root URL
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  network:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check actual Cloudflare resolution and complete audio
+        env:
+          READVIDEO_WORKER_URL: ${{ inputs.worker_url }}
+        run: node tests/worker-live.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worker-network-observation
+          path: .qa/worker-live-result.json
