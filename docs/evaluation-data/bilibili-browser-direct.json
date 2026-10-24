@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-24",
+  "environment": "User desktop Chrome, normal security settings; no extension or application proxy",
+  "sample": "https://www.bilibili.com/video/av728835116/",
+  "bvid": "BV1VS4y1t7st",
+  "cid": 785724558,
+  "source_page": {
+    "origin": "https://www.bilibili.com",
+    "embedded_audio_formats": 3,
+    "audio_range_status": 206,
+    "audio_range_bytes": 1024,
+    "note": "Existing browser session; not an anonymous-session acceptance test"
+  },
+  "app_page": {
+    "origin": "https://survivorno1.github.io",
+    "fetch_view_playurl_player": "TypeError: Failed to fetch; this alone does not identify the failure layer",
+    "jsonp_view": { "code": 0, "subtitle_count": 0 },
+    "sandbox_jsonp_view": {
+      "code": 0,
+      "cid": 785724558,
+      "remaining_sandbox_frames": 0
+    },
+    "jsonp_playurl_player_nav": "Script refused or network error; no successful callback",
+    "no_referrer_jsonp_playurl_player": "Script refused or network error; no successful callback",
+    "audio_candidate_statuses": [403, 403, 403, 403, 403, 403],
+    "audio_candidate_hosts": [
+      "upos-sz-mirrorcos.bilivideo.com",
+      "upos-sz-mirrorcos.bilivideo.com",
+      "upos-sz-mirrorcosb.bilivideo.com",
+      "upos-sz-mirrorhw.bilivideo.com",
+      "upos-sz-mirrorhw.bilivideo.com",
+      "upos-sz-mirrorhwb.bilivideo.com"
+    ],
+    "audio_request": "Range bytes=0-1023; credentials omit; no-referrer; only error bodies received",
+    "conclusion": "Public metadata verified; subtitle content absent in this sample; full audio download not supported by the observed route"
+  },
+  "privacy": "No cookies, account identifiers, API keys, signed media URLs or request headers retained in this record"
+}

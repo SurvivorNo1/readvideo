@@ -1,4 +1,5 @@
 import { parseCaptions, windowAudio } from "./core.mjs";
+import { bilibiliVideo, discoverBilibili } from "./bilibili.mjs";
 export function embeddedPlayer(value) {
   const url = sourceURL(value),
     host = url.hostname.toLowerCase();
@@ -32,6 +33,10 @@ export function embeddedPlayer(value) {
       url:
         "https://player.bilibili.com/player.html?" +
         (id.startsWith("av") ? "aid=" + id.slice(2) : "bvid=" + id) +
+        (Number(url.searchParams.get("p")) > 1 &&
+        Number.isSafeInteger(Number(url.searchParams.get("p")))
+          ? "&page=" + Number(url.searchParams.get("p"))
+          : "") +
         "&autoplay=0",
     };
   }
@@ -107,6 +112,15 @@ export async function discoverSource(
 ) {
   const url = sourceURL(value),
     ext = url.pathname.split(".").pop().toLowerCase();
+  if (typeof document !== "undefined" && bilibiliVideo(value)) {
+    const publicSource = await discoverBilibili(
+      value,
+      language,
+      undefined,
+      fetcher,
+    );
+    if (publicSource) return publicSource;
+  }
   if (["wav", "mp3", "ogg", "m4a", "mp4", "webm", "flac"].includes(ext))
     return { kind: "media", url: url.href };
   const controller = new AbortController(),

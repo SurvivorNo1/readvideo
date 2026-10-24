@@ -16,6 +16,8 @@ Desktop Chrome / Edge is the initial tab-audio target. The interface is Chinese;
 
 ## Browser computation
 
+- Bilibili links try the observed public video-info JSONP route in an opaque sandbox, preserving part selection and using exposed readable subtitles when available. Live metadata retrieval succeeded for the evaluated sample; full platform audio retrieval did not. Platform scripts cannot access the app's API-key fields or storage through that sandbox.
+
 - Automatically prefer captions, then explicit CORS-readable audio/video sources in readable pages, then authorized tab audio. Complete accessible audio is decoded without waiting for playback; restricted platform pages still require consent and playback.
 - Completed transcripts are reused for the same URL and recognition language when changing article depth, without another recording or recognition pass.
 

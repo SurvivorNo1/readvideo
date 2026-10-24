@@ -279,7 +279,8 @@ $("#open-video").addEventListener("click", () => {
     "在原站准备好视频，再回到这里点击授权。选择原视频标签页并勾选“共享标签页音频”，然后从头播放；结束后点击“停止采集，完成转写”。";
 });
 let session = null,
-  generateAfterCapture = true;
+  generateAfterCapture = true,
+  preparedTitle = "";
 async function generateCurrent() {
   if (transcript?.partial)
     throw new Error("转写尚未完成，请处理剩余音频后生成文章。");
@@ -366,6 +367,7 @@ function configureSession(url) {
     },
   });
   transcript = session.transcript;
+  if (preparedTitle) transcript.title = preparedTitle;
   lastURL = url;
   updateReading();
   selectTab("transcript");
@@ -390,6 +392,9 @@ async function run(generate = true) {
     }
     progress("优先检查可直接读取的字幕", 5);
     const source = await discoverSource(url, $("#caption-language").value);
+    preparedTitle = source.title || "";
+    if (source.reason === "part-unavailable")
+      throw Error("没有找到这个分P，请检查链接中的 p 参数。");
     if (source.kind === "captions") {
       session?.close();
       session = null;
@@ -405,6 +410,8 @@ async function run(generate = true) {
       else selectTab("transcript");
     } else {
       $("#capture-panel").hidden = false;
+      $(".capture-heading h2").textContent =
+        preparedTitle || "让浏览器，听懂这段视频。";
       $("#recovery-actions").hidden = true;
       $("#open-video").href = url;
       preparePlayer(url);

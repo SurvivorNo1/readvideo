@@ -74,6 +74,105 @@ try {
   });
   await page.goto(site.url);
   await step(
+    "Bilibili public subtitles use an isolated JSONP frame and need no helper",
+    async () => {
+      // Explicit JSONP response adapter. Native opaque-frame network interception
+      // varies across Chrome builds; live endpoint evidence is recorded separately.
+      const respond = async (frame) => {
+        if (frame.url() !== "about:srcdoc") return;
+        try {
+          await frame.waitForFunction(
+            () => typeof window.__readvideoInfo === "function",
+            undefined,
+            { timeout: 1000 },
+          );
+          await frame.evaluate(() => {
+            const url = new URL(document.querySelector("script[src]").src);
+            if (url.searchParams.get("aid") === "2") return;
+            let isolated = false;
+            try {
+              parent.document.querySelector("#api-key");
+            } catch {
+              isolated = true;
+            }
+            window.__readvideoInfo({
+              code: 0,
+              isolated,
+              data: {
+                title: "Public Bilibili fixture",
+                cid: 9,
+                pages: [{ cid: 9 }],
+                subtitle: {
+                  list: [
+                    {
+                      lan: "en",
+                      subtitle_url: "https://aisubtitle.hdslb.com/fixture.json",
+                    },
+                  ],
+                },
+              },
+            });
+          });
+        } catch {} // A timeout case intentionally destroys its frame.
+      };
+      page.on("framenavigated", respond);
+      await page.route("https://aisubtitle.hdslb.com/fixture.json", (r) =>
+        r.fulfill({
+          contentType: "application/json",
+          headers: { "access-control-allow-origin": "*" },
+          body: JSON.stringify({
+            body: [
+              {
+                from: 0,
+                to: 2,
+                content: "Public Bilibili subtitle without extension.",
+              },
+            ],
+          }),
+        }),
+      );
+      const isolated = await page.evaluate(async () => {
+        const { publicVideoInfo } = await import("./bilibili.mjs");
+        window.postMessage(
+          { token: "forged", payload: { code: 99 } },
+          location.origin,
+        );
+        const result = await publicVideoInfo({ aid: "1" });
+        let timeout = false;
+        try {
+          await publicVideoInfo({ aid: "2" }, 20);
+        } catch {
+          timeout = true;
+        }
+        return {
+          isolated: result.isolated,
+          timeout,
+          frames: document.querySelectorAll("iframe[sandbox]").length,
+        };
+      });
+      assert.deepEqual(isolated, { isolated: true, timeout: true, frames: 0 });
+      await page
+        .getByLabel("视频链接", { exact: true })
+        .fill("https://www.bilibili.com/video/av728835116/");
+      await page
+        .getByRole("button", { name: "仅读取字幕", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.match(
+        await page.locator("#transcript").textContent(),
+        /Public Bilibili subtitle/,
+      );
+      assert.match(
+        await page.locator("#source-title").textContent(),
+        /Public Bilibili fixture/,
+      );
+      assert.equal(await page.locator("#capture-panel").isVisible(), false);
+      page.off("framenavigated", respond);
+    },
+  );
+  await step(
     "readable pages prefer captions, then validated full audio, keeping the page source",
     async () => {
       const observed = await page.evaluate(async () => {

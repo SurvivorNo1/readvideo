@@ -11,6 +11,7 @@ export const APP_FILES = [
   "audio.mjs",
   "session.mjs",
   "source.mjs",
+  "bilibili.mjs",
   "asr-worker.mjs",
   "audio-worklet.js",
 ];
