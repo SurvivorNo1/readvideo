@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-24",
+  "sample": "https://www.bilibili.com/video/av728835116/",
+  "browserCollection": {
+    "bytes": 996214,
+    "sha256": "e6a4258a440da4d6d288fa335464d0ff275b5d3f5598a9e492befa00301945bc",
+    "parallel": true,
+    "firstObservedMs": 1325,
+    "laterCachedObservedMs": 358,
+    "sourceContext": "User Chrome on Bilibili page; code executed via automation, not a user DevTools paste"
+  },
+  "localASR": {
+    "kind": "actual local M4A import and CPU/WASM Whisper tiny; no adapters or LLM",
+    "testedAt": "2026-10-24T07:26:40.006Z",
+    "inputBytes": 996214,
+    "totalProcessingMs": 31814,
+    "cues": 25,
+    "characters": 1907,
+    "topicWordsObserved": true,
+    "engine": "wasm/cpu",
+    "note": "Total includes model fetching/initialization, decode and inference. Accuracy not scored. Separate from native browser Save completion."
+  },
+  "transferVerification": "QA file copied with a separate diagnostic request and hash-matched to actual browser bytes. Native Save completion not verified by automation.",
+  "saveButton": "Standard Chrome download event and exact bytes verified with platform adapter; native user-Chrome save completion not observed",
+  "limits": [
+    "Existing browser session; no anonymous guarantee",
+    "Single English spoken sample; accuracy not scored",
+    "Not a single real source-tab-to-file-to-article acceptance run",
+    "No cloud ASR; LLM article generation not part of this run"
+  ]
+}

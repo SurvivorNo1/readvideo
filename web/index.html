@@ -87,10 +87,16 @@
           </div>
         </form>
         <div class="under-input">
-          <span>字幕优先 · 无字幕时由浏览器转写 · 无需本地服务</span
-          ><button id="import-open" class="text-button" type="button">
-            或导入字幕文件 <span aria-hidden="true">↗</span>
-          </button>
+          <span>字幕优先 · 无字幕时由浏览器转写 · 无需本地服务</span>
+          <div class="import-actions">
+            <button id="collector-open" class="text-button" type="button">
+              B站原页取音轨</button
+            ><button id="audio-import-open" class="text-button" type="button">
+              导入音频</button
+            ><button id="import-open" class="text-button" type="button">
+              或导入字幕文件 <span aria-hidden="true">↗</span>
+            </button>
+          </div>
         </div>
       </section>
       <section
@@ -285,6 +291,77 @@
         ><span id="provider-label">使用你自己的 API</span>
       </footer>
     </main>
+    <input
+      id="audio-file"
+      type="file"
+      accept="audio/*,.m4a,.mp3,.wav,.ogg,.flac,.mp4,.webm"
+      hidden
+    />
+    <dialog id="collector-guide" aria-labelledby="collector-title">
+      <div class="drawer-heading">
+        <div>
+          <span class="eyebrow">NO EXTENSION</span>
+          <h2 id="collector-title">原页获取，回这里阅读。</h2>
+        </div>
+        <button
+          class="close"
+          id="collector-close"
+          aria-label="关闭原页获取引导"
+        >
+          ×
+        </button>
+      </div>
+      <p class="drawer-description">
+        适用于B站原页可以读取的独立音轨。无需安装扩展；这是一条需要手动运行脚本的备用方式。
+      </p>
+      <ol class="collector-steps">
+        <li>
+          <strong>在原站打开视频。</strong>
+          <p>等播放器加载完成，不必播放完整视频。</p>
+          <a
+            id="collector-source"
+            class="secondary"
+            href="https://www.bilibili.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >打开B站原视频 ↗</a
+          >
+        </li>
+        <li>
+          <strong>在原页运行获取脚本。</strong>
+          <p>
+            复制后，在B站页面的开发者工具 →
+            Console（控制台）中运行。只读取播放器中的音轨地址，不读取或导出
+            Cookie。若浏览器阻止粘贴，可停止此方式，使用音频共享或自行取得的音频文件。
+          </p>
+          <button id="collector-copy" class="primary" type="button">
+            复制获取脚本
+          </button>
+          <details>
+            <summary>查看脚本</summary>
+            <textarea
+              id="collector-code"
+              aria-label="原页音轨获取脚本"
+              readonly
+              spellcheck="false"
+            ></textarea>
+          </details>
+        </li>
+        <li>
+          <strong>导入下载的音频。</strong>
+          <p>
+            原页显示进度，点击“保存音轨”下载 M4A
+            文件；支持时自动并发下载，否则改用单流。回这里选择文件，本机转写完成后再生成文章。
+          </p>
+          <button id="collector-import" class="secondary" type="button">
+            选择音频文件
+          </button>
+        </li>
+      </ol>
+      <p class="field-note">
+        不保证受限视频可用。音频不上传转写服务；只有生成文章时，文字才发送给你配置的模型服务。
+      </p>
+    </dialog>
     <input
       id="subtitle-file"
       type="file"

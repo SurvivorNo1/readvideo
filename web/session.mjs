@@ -5,7 +5,7 @@ import {
   mergeTranscript,
   wavBlob,
 } from "./audio.mjs";
-import { decodeMedia } from "./source.mjs";
+import { decodeMedia, decodeAudioBytes } from "./source.mjs";
 export class ReadingSession {
   constructor({
     url,
@@ -33,7 +33,7 @@ export class ReadingSession {
     this.ended = false;
     this.modelReady = Promise.resolve();
     this.transcript = {
-      title: new URL(url).hostname + " · 浏览器转写",
+      title: url ? new URL(url).hostname + " · 浏览器转写" : "本地音频",
       url,
       segments: [],
       source: "browser-asr",
@@ -127,6 +127,22 @@ export class ReadingSession {
     this.modelReady = this.asr.load();
     this.modelReady.catch(() => {});
     const jobs = await decodeMedia(mediaURL, progress);
+    this.elapsed = jobs.at(-1)?.keepUntil || 0;
+    this.ended = true;
+    for (const job of jobs) this.add(job);
+    await this.finish();
+  }
+  async startFile(file) {
+    if (!file.size || file.size > 128000000)
+      throw Error("音频文件需在 128 MB 以内，且不能为空。");
+    this.transcript.timeline = "media";
+    this.transcript.title = file.name.replace(/\.[^.]+$/, "");
+    this.transcript.input = "audio-file";
+    const jobs = await decodeAudioBytes(
+      new Uint8Array(await file.arrayBuffer()),
+    );
+    this.modelReady = this.asr.load();
+    this.modelReady.catch(() => {});
     this.elapsed = jobs.at(-1)?.keepUntil || 0;
     this.ended = true;
     for (const job of jobs) this.add(job);

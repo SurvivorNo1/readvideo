@@ -264,6 +264,11 @@ export async function decodeMedia(value, progress = () => {}, fetcher = fetch) {
     bytes.set(part, at);
     at += part.length;
   }
+  return decodeAudioBytes(bytes);
+}
+export async function decodeAudioBytes(bytes) {
+  if (!bytes.byteLength || bytes.byteLength > 128000000)
+    throw Error("音频文件需在 128 MB 以内，且不能为空。");
   const context = new AudioContext();
   try {
     const decoded = await context.decodeAudioData(bytes.buffer);

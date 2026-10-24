@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { serve } from "./static-server.mjs";
+import { collectBilibiliAudio } from "../web/collector.mjs";
 const root = path.resolve("."),
   site = await serve(path.join(root, "web"));
 const browser = await chromium.launch({
@@ -596,6 +597,136 @@ try {
       );
       assert.equal(await page.evaluate(() => window.recaptureCount), 0);
       assert.equal(await page.locator("#error").isVisible(), false);
+    },
+  );
+  await step(
+    "collector save button downloads exactly the assembled bytes (platform adapter)",
+    async () => {
+      const fixture = await browser.newPage({ acceptDownloads: true });
+      try {
+        const bytes = Buffer.from(
+          Array.from({ length: 1100000 }, (_, i) => i % 251),
+        );
+        await fixture.route(
+          "https://www.bilibili.com/video/BV1VS4y1t7st/",
+          (r) =>
+            r.fulfill({
+              contentType: "text/html",
+              body: "<html><body>Explicit source-page fixture, not real platform evidence.</body></html>",
+            }),
+        );
+        await fixture.route("https://cdn.bilivideo.com/fixture.m4s", (r) => {
+          const range = r.request().headers().range;
+          const match = range?.match(/bytes=(\d+)-(\d+)/);
+          const start = match ? Number(match[1]) : 0,
+            end = match ? Number(match[2]) : bytes.length - 1;
+          return r.fulfill({
+            status: match ? 206 : 200,
+            contentType: "audio/mp4",
+            headers: {
+              "access-control-allow-origin": "*",
+              "access-control-expose-headers": "Content-Range",
+              "content-range": `bytes ${start}-${end}/${bytes.length}`,
+            },
+            body: bytes.subarray(start, end + 1),
+          });
+        });
+        await fixture.goto("https://www.bilibili.com/video/BV1VS4y1t7st/");
+        await fixture.evaluate(
+          () =>
+            (window.__playinfo__ = {
+              data: {
+                dash: {
+                  audio: [
+                    {
+                      bandwidth: 64000,
+                      baseUrl: "https://cdn.bilivideo.com/fixture.m4s",
+                    },
+                  ],
+                },
+              },
+            }),
+        );
+        const result = await fixture.evaluate(collectBilibiliAudio, {
+          save: true,
+        });
+        assert.equal(result.bytes, bytes.length);
+        assert.equal(result.parallel, true);
+        const download = fixture.waitForEvent("download");
+        await fixture.locator("#readvideo-download-audio").click();
+        await (await download).saveAs(".qa/collector-button.m4a");
+        assert.deepEqual(await fs.readFile(".qa/collector-button.m4a"), bytes);
+      } finally {
+        await fixture.close();
+      }
+    },
+  );
+  await step(
+    "manual Bilibili guide and local audio import work without a provider upload",
+    async () => {
+      await page
+        .getByRole("button", { name: "B站原页取音轨", exact: true })
+        .click();
+      await page
+        .getByRole("heading", { name: "原页获取，回这里阅读。", exact: true })
+        .waitFor();
+      const script = await page.locator("#collector-code").inputValue();
+      assert.equal(
+        /document\.cookie|localStorage|sessionStorage/.test(script),
+        false,
+      );
+      await page
+        .getByRole("button", { name: "关闭原页获取引导", exact: true })
+        .click();
+      const bytes = await page.evaluate(async () => {
+        const { wavBlob } = await import("./audio.mjs");
+        return [
+          ...new Uint8Array(
+            await wavBlob(
+              Float32Array.from(
+                { length: 16000 },
+                (_, i) => Math.sin(i / 10) * 0.1,
+              ),
+            ).arrayBuffer(),
+          ),
+        ];
+      });
+      const before = generations.length;
+      await page.locator("#audio-file").setInputFiles({
+        name: "local-speech.wav",
+        mimeType: "audio/wav",
+        buffer: Buffer.from(bytes),
+      });
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.equal(generations.length, before);
+      assert.match(
+        await page.locator("#transcript").textContent(),
+        /Captured final/,
+      );
+      assert.equal(await page.locator("#source-link").isVisible(), false);
+      assert.match(
+        await page.locator("#source-title").textContent(),
+        /local-speech/,
+      );
+      await page.getByRole("tab", { name: "阅读笔记", exact: true }).click();
+      await page
+        .getByRole("button", { name: "根据字幕生成 →", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.equal(generations.length, before + 1);
+      assert.match(generations.at(-1).messages[1].content, /Captured final/);
+      await page.getByLabel("文章篇幅", { exact: true }).selectOption("long");
+      await page
+        .getByRole("button", { name: "读取并生成", exact: true })
+        .click();
+      await page.waitForFunction(
+        () => !document.querySelector("#generate").disabled,
+      );
+      assert.equal(generations.length, before + 2);
     },
   );
   await step(

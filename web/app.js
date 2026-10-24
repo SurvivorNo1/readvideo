@@ -8,6 +8,7 @@ import {
 } from "./core.mjs";
 import { discoverSource, embeddedPlayer } from "./source.mjs";
 import { ReadingSession } from "./session.mjs";
+import { collectorScript } from "./collector.mjs";
 const $ = (selector) => document.querySelector(selector);
 const make = (tag, cls, text) => {
   const node = document.createElement(tag);
@@ -218,7 +219,9 @@ function updateReading() {
   if (transcript.source === "browser-asr")
     $("#source-title").textContent += transcript.partial
       ? " · 转写未完成"
-      : " · 本次采集已转写";
+      : transcript.timeline === "media"
+        ? " · 音频已转写"
+        : " · 本次采集已转写";
   const duration = transcript.duration ? time(transcript.duration) : "";
   const chars = transcript.segments.reduce((n, s) => n + s.text.length, 0);
   $("#source-meta").textContent = [
@@ -380,6 +383,13 @@ async function run(generate = true) {
   $("#error").hidden = true;
   setBusy(true);
   try {
+    if (url) $("#video-url").required = true;
+    if (
+      !url &&
+      transcript?.input === "audio-file" &&
+      transcript.requested_language !== $("#caption-language").value
+    )
+      throw Error("识别语言已更改，请重新导入音频文件。");
     if (
       transcript &&
       lastURL === url &&
@@ -674,6 +684,89 @@ $("#import-open").addEventListener(
   "click",
   () => !busy && $("#subtitle-file").click(),
 );
+$("#collector-open").addEventListener("click", () => {
+  if (busy) return;
+  const url = $("#video-url").value.trim();
+  $("#collector-source").href =
+    embeddedPlayerSafeBili(url) || "https://www.bilibili.com/";
+  $("#collector-code").value = collectorScript();
+  $("#collector-guide").showModal();
+});
+function embeddedPlayerSafeBili(value) {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      ["bilibili.com", "www.bilibili.com", "m.bilibili.com"].includes(
+        url.hostname,
+      ) &&
+      /^\/video\/(BV[\w]{10}|av\d+)(?:\/|$)/.test(url.pathname)
+    )
+      return url.href;
+  } catch {}
+  return null;
+}
+$("#collector-close").addEventListener("click", () =>
+  $("#collector-guide").close(),
+);
+$("#collector-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(collectorScript());
+    toast("已复制。请在B站原页运行，下载后回到这里导入音频。");
+  } catch {
+    $("#collector-code").focus();
+    $("#collector-code").select();
+    toast("请从“查看脚本”中手动复制。");
+  }
+});
+$("#audio-import-open").addEventListener(
+  "click",
+  () => !busy && $("#audio-file").click(),
+);
+$("#collector-import").addEventListener("click", () => {
+  if (!busy) {
+    $("#collector-guide").close();
+    $("#audio-file").click();
+  }
+});
+$("#audio-file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file || busy) return;
+  $("#error").hidden = true;
+  try {
+    if (!file.size || file.size > 128000000)
+      throw Error("音频文件需在128 MB以内，且不能为空。");
+    if (!/\.(m4a|mp3|wav|ogg|flac|mp4|webm)$/i.test(file.name))
+      throw Error("请选择 M4A、MP3、WAV、OGG、FLAC、MP4 或 WebM 文件。");
+    setBusy(true);
+    generateAfterCapture = false;
+    preparedTitle = "";
+    $("#video-url").value = "";
+    $("#video-url").required = false;
+    $("#search").value = "";
+    $("#capture-panel").hidden = false;
+    $("#inline-player").hidden = true;
+    $("#video-frame").removeAttribute("src");
+    currentPlayer = null;
+    $("#capture-start").hidden = true;
+    $("#capture-stop").hidden = true;
+    $("#open-video").hidden = true;
+    $("#recovery-actions").hidden = true;
+    $(".capture-heading h2").textContent = file.name;
+    $("#capture-help").textContent =
+      "正在本机读取音频，无需播放；转写完成后可根据字幕生成文章。";
+    progress("正在读取本地音频", 10);
+    const current = configureSession("");
+    await current.startFile(file);
+  } catch (error) {
+    showError(error);
+  } finally {
+    event.target.value = "";
+    setBusy(false);
+  }
+});
 $("#subtitle-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file || busy) return;

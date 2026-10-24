@@ -1718,3 +1718,46 @@ dialog {
   font-size: 11px !important;
   color: #86868b !important;
 }
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: flex-end;
+}
+.collector-steps {
+  padding-left: 22px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.collector-steps li {
+  margin: 24px 0;
+  padding-left: 4px;
+}
+.collector-steps p {
+  color: #6e6e73;
+  font-size: 12px;
+  margin: 8px 0 14px;
+}
+.collector-steps details {
+  margin-top: 12px;
+  color: #6e6e73;
+  font-size: 12px;
+}
+#collector-code {
+  width: 100%;
+  height: 180px;
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  font:
+    11px/1.5 ui-monospace,
+    monospace;
+  resize: vertical;
+}
+@media (max-width: 640px) {
+  .import-actions {
+    justify-content: flex-start;
+  }
+}
