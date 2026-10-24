@@ -1,0 +1,50 @@
+[Unit]
+Description=readvideo Bilibili resolve service
+Documentation=https://github.com/SurvivorNo1/readvideo
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=readvideo
+Group=readvideo
+WorkingDirectory=/opt/readvideo
+EnvironmentFile=/etc/readvideo/env
+ExecStart=/usr/bin/node /opt/readvideo/server.mjs
+
+Restart=on-failure
+RestartSec=5s
+
+# ── 资源限额 ──
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=50%
+TasksMax=64
+
+# ── 安全加固 ──
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+# V8 需要 JIT（可写可执行内存），须保持 false
+MemoryDenyWriteExecute=false
+
+# ── 日志 ──
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=readvideo
+
+[Install]
+WantedBy=multi-user.target

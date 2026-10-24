@@ -19,8 +19,12 @@ export function edgeEndpoint(value) {
       ))
   )
     throw Error("视频解析服务需使用不含账号密码的 HTTPS 地址。");
-  if (url.pathname !== "/") throw Error("请填写视频解析服务的根地址。");
-  return url.origin;
+  // 允许挂载在子路径下（例如 https://example.com/rv-resolve）。
+  // 规范化：去掉尾部斜杠；根路径仍返回纯 origin，保持既有行为不变。
+  const path = url.pathname.replace(/\/+$/, "");
+  if (path && !/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(path))
+    throw Error("视频解析服务路径无效。");
+  return url.origin + path;
 }
 export async function resolveThroughEdge(
   video,
