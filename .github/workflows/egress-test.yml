@@ -1,0 +1,58 @@
+name: Egress test
+
+# 诊断用：测量 GitHub Actions 运行器的出口 IP 能否访问 B 站。
+# 手动触发，只读，不部署任何东西。用完可以删除。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Egress and Bilibili reachability
+        run: |
+          set +e
+          echo "===== 1. 出口 ====="
+          curl -s --max-time 15 https://ipinfo.io/json || echo "(ipinfo failed)"
+
+          BV=BV1QAnB67EL3
+          CID=42918086045
+
+          echo
+          echo "===== 2. view 接口（空 UA）====="
+          CODE=$(curl -s -o /tmp/view.txt -w "%{http_code}" --max-time 20 \
+            -H "Referer: https://www.bilibili.com/" -H "User-Agent:" \
+            "https://api.bilibili.com/x/web-interface/view?bvid=$BV")
+          echo "HTTP=$CODE"
+          head -c 300 /tmp/view.txt; echo
+
+          echo
+          echo "===== 3. playurl 接口（空 UA）====="
+          CODE2=$(curl -s -o /tmp/play.txt -w "%{http_code}" --max-time 20 \
+            -H "Referer: https://www.bilibili.com/" -H "User-Agent:" \
+            "https://api.bilibili.com/x/player/playurl?bvid=$BV&cid=$CID&fnval=16&fourk=1")
+          echo "HTTP=$CODE2"
+          grep -o '"baseUrl"\|"base_url"' /tmp/play.txt | head -1
+          head -c 300 /tmp/play.txt; echo
+
+          echo
+          echo "===== 4. 主页 ====="
+          CODE3=$(curl -s -o /tmp/home.txt -w "%{http_code}" --max-time 20 \
+            -H "Referer: https://www.bilibili.com/" -H "User-Agent:" \
+            "https://www.bilibili.com/")
+          echo "HTTP=$CODE3"
+          grep -o '<title>[^<]*</title>' /tmp/home.txt | head -1
+
+          echo
+          echo "===== 5. 对照 github ====="
+          curl -s -o /dev/null -w "HTTP=%{http_code}\n" --max-time 15 https://api.github.com/
+
+          echo
+          echo "===== 结论 ====="
+          if [ "$CODE" = "200" ] && grep -q '"code":0' /tmp/view.txt; then
+            echo "PASS: GitHub Actions 出口可以访问 B 站"
+          else
+            echo "FAIL: 出口被拦截（view HTTP=$CODE）"
+          fi
