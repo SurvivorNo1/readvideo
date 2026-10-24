@@ -341,10 +341,30 @@ function configureSession(url) {
       selectTab("transcript");
     },
     onProgress: (p) => {
+      // 模型缓存状态：告诉用户"已缓存"还是"这次下载了多少"
+      if (p.type === "cache") {
+        const note = $("#cache-note");
+        if (!note) return;
+        const mb = (n) => (n / 1048576).toFixed(1);
+        if (p.mode === "opfs" && p.cached && p.reused) {
+          note.textContent = `识别模型已在本机（OPFS），复用 ${mb(p.hitBytes)} MB，无需重新下载。`;
+        } else if (p.mode === "opfs") {
+          note.textContent = `识别模型已保存到本机（OPFS），下次直接复用。本次下载 ${mb(p.downloadedBytes)} MB。`;
+        } else if (p.mode === "browser") {
+          note.textContent = `识别模型已存入浏览器缓存，下次直接复用。本次下载 ${mb(p.downloadedBytes)} MB。`;
+        } else {
+          note.textContent = "当前环境不支持本地缓存，模型每次都要重新下载。";
+        }
+        return;
+      }
+      const size =
+        p.type === "download" && p.total
+          ? ` (${(p.loaded / 1048576).toFixed(1)}/${(p.total / 1048576).toFixed(1)} MB)`
+          : "";
       progress(
         p.message ||
           (p.type === "download"
-            ? "正在下载识别模型 · " + Math.round(p.progress || 0) + "%"
+            ? "正在下载识别模型 · " + Math.round(p.progress || 0) + "%" + size
             : "准备浏览器识别"),
         Math.round(p.progress || 10),
       );

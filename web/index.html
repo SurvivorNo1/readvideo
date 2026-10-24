@@ -5,100 +5,108 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       name="description"
-      content="输入视频链接，提取字幕，用自己的 API 生成速读摘要和文章。"
+      content="贴一个视频链接，拿到可读的文字。字幕优先，没有字幕就在浏览器里转写。"
     />
-    <title>readvideo — 把视频，读成文章。</title>
+    <title>readvideo — 把视频读成文字</title>
     <link rel="icon" type="image/svg+xml" href="icon.svg" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header class="topbar">
       <a class="brand" href="./" aria-label="readvideo 首页"
-        ><svg viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M6 6h14a6 6 0 0 1 6 6v14H12a6 6 0 0 1-6-6z" />
-          <path d="m14 11 7 5-7 5z" /></svg
-        ><span>read<strong>video</strong></span></a
+        ><svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="2.5" y="5" width="19" height="14" rx="3.5" />
+          <path d="M10 9.2v5.6l5-2.8z" /></svg
+        ><span>read<em>video</em></span></a
       >
-      <div class="header-right">
-        <span class="local-label"><i></i>在你的设备上运行</span
-        ><button id="settings-open" class="quiet" aria-label="API 配置">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 17h16" />
-            <circle cx="9" cy="7" r="3" />
-            <circle cx="15" cy="17" r="3" /></svg
-          >API 配置
-        </button>
-      </div>
+      <button id="settings-open" class="icon-button" aria-label="API 配置">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"
+          /></svg
+        ><span class="sr-only">API 配置</span>
+      </button>
     </header>
+
     <main>
-      <section class="intro">
-        <span class="eyebrow">LESS WATCHING. MORE UNDERSTANDING.</span>
-        <h1>把视频，<span>读成文章。</span></h1>
-        <p>贴一个链接，字幕优先，浏览器转写，留住真正重要的内容。</p>
+      <section class="lede">
+        <h1>贴一个视频链接。</h1>
+        <p>字幕优先。没有字幕，就在你的浏览器里转写。</p>
       </section>
+
       <section class="entry" aria-label="视频处理">
         <form id="link-form">
           <div class="url-row">
-            <span class="link-icon" aria-hidden="true">↗</span
-            ><input
+            <input
               id="video-url"
               type="url"
               aria-label="视频链接"
               autocomplete="off"
               spellcheck="false"
-              placeholder="粘贴 YouTube、Bilibili 或其他视频链接…"
+              placeholder="https://www.bilibili.com/video/…"
               required
-            /><button id="generate" class="primary" type="submit">
-              读取并生成 <span aria-hidden="true">→</span>
+            /><button id="generate" class="go" type="submit">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h14M13 6l6 6-6 6" /></svg
+              ><span class="sr-only">读取并生成</span>
             </button>
           </div>
-          <div class="entry-options">
-            <div class="mode-control" aria-label="生成形式">
-              <label
-                ><input type="radio" name="mode" value="brief" /><span
-                  >速读摘要</span
-                ></label
-              ><label
-                ><input type="radio" name="mode" value="article" checked /><span
-                  >完整文章</span
-                ></label
-              >
-            </div>
-            <label class="language-select" id="length-control"
-              ><span>篇幅</span
-              ><select id="article-length" aria-label="文章篇幅">
-                <option value="short">短篇 · 300–500 字</option>
-                <option value="medium" selected>中篇 · 800–1,500 字</option>
-                <option value="long">长篇 · 1,800–3,000 字</option>
-                <option value="detailed">详细 · 3,000–5,000 字</option>
-              </select></label
-            >
-            <span class="option-divider"></span
-            ><label class="language-select"
-              ><span>字幕</span
-              ><select id="caption-language" aria-label="字幕语言">
-                <option value="auto">原语言优先</option>
-                <option value="zh">中文优先</option>
-                <option value="en">英文优先</option>
-              </select></label
-            ><button id="extract-only" class="text-button" type="button">
+
+          <div class="quick-row">
+            <button id="extract-only" class="link-button" type="button">
               仅读取字幕
             </button>
+            <span class="quick-hint">不需要模型 API</span>
+          </div>
+
+          <div class="options-band">
+            <div class="field-row">
+              <label class="inline-field"
+                >形式
+                <span class="segmented" id="mode-control">
+                  <label
+                    ><input type="radio" name="mode" value="brief" /><span
+                      >速读</span
+                    ></label
+                  ><label
+                    ><input
+                      type="radio"
+                      name="mode"
+                      value="article"
+                      checked /><span>文章</span></label
+                  >
+                </span>
+              </label>
+              <label class="inline-field"
+                >篇幅<select id="article-length" aria-label="文章篇幅">
+                  <option value="short">短篇</option>
+                  <option value="medium" selected>中篇</option>
+                  <option value="long">长篇</option>
+                  <option value="detailed">详细</option>
+                </select></label
+              >
+              <label class="inline-field"
+                >字幕<select id="caption-language" aria-label="字幕语言">
+                  <option value="auto">原语言优先</option>
+                  <option value="zh">中文优先</option>
+                  <option value="en">英文优先</option>
+                </select></label
+              >
+            </div>
+            <div class="alt-actions">
+              <button id="collector-open" class="link-button" type="button">
+                B站原页取音轨</button
+              ><button id="audio-import-open" class="link-button" type="button">
+                导入音频</button
+              ><button id="import-open" class="link-button" type="button">
+                导入字幕文件</button
+              >
+            </div>
           </div>
         </form>
-        <div class="under-input">
-          <span>字幕优先 · 无字幕时由浏览器转写 · 无需本地服务</span>
-          <div class="import-actions">
-            <button id="collector-open" class="text-button" type="button">
-              B站原页取音轨</button
-            ><button id="audio-import-open" class="text-button" type="button">
-              导入音频</button
-            ><button id="import-open" class="text-button" type="button">
-              或导入字幕文件 <span aria-hidden="true">↗</span>
-            </button>
-          </div>
-        </div>
       </section>
+
       <section
         id="capture-panel"
         class="capture-panel"
@@ -106,16 +114,11 @@
         aria-label="浏览器音频转写"
       >
         <div class="capture-heading">
-          <div>
-            <span class="eyebrow">IN YOUR BROWSER</span>
-            <h2>让浏览器，听懂这段视频。</h2>
-          </div>
-          <span id="engine-label" class="engine-label"
-            >GPU 可选 · 支持 CPU</span
-          >
+          <h2></h2>
+          <span id="engine-label" class="engine-label">GPU 可选 · 支持 CPU</span>
         </div>
         <p id="capture-help">
-          此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选“共享标签页音频”，再从起点播放。音频在浏览器内转写，不上传
+          此链接的字幕无法被网页直接读取。打开原视频，点击授权，选择视频标签页并勾选"共享标签页音频"，再从起点播放。音频在浏览器内转写，不上传
           ASR 服务。
         </p>
         <div id="inline-player" class="inline-player" hidden>
@@ -127,19 +130,19 @@
             allowfullscreen
           ></iframe>
           <p>
-            先授权本页音频，再播放视频。可在播放器中选择其支持的倍速；播放受限时使用“原站播放”。倍速会影响时间点与识别质量，仍需实际核对。
+            先授权本页音频，再播放视频。可在播放器中选择其支持的倍速；播放受限时使用"原站播放"。倍速会影响时间点与识别质量，仍需实际核对。
           </p>
         </div>
         <div class="capture-actions">
           <a
             id="open-video"
-            class="secondary"
+            class="ghost"
             target="_blank"
             rel="noopener noreferrer"
-            >① 打开原视频 ↗</a
-          ><button id="capture-start" class="primary" type="button">
+            >打开原视频 ↗</a
+          ><button id="capture-start" class="solid" type="button">
             ② 授权音频并开始</button
-          ><button id="capture-stop" class="secondary" type="button" hidden>
+          ><button id="capture-stop" class="ghost" type="button" hidden>
             停止采集，完成转写
           </button>
         </div>
@@ -161,52 +164,51 @@
               value="0"
               step="1"
           /></label>
-          <p>
-            首次使用需下载 Whisper
-            模型，之后复用浏览器缓存。转写随播放进行；暂停、跳转、广告和倍速会影响字幕时间，采集时间不等于可靠的原视频时间。无
-            GPU 也可以使用 CPU，但可能需要等待队列处理。
+          <p id="cache-note">
+            识别模型第一次使用需要下载，之后保存在本机（OPFS），不再重复下载。
           </p>
         </details>
         <div id="capture-status" role="status" class="capture-status">
           准备好后再授权。不会读取麦克风。
         </div>
         <div id="recovery-actions" class="capture-actions" hidden>
-          <button id="retry-cpu" class="secondary" type="button">
+          <button id="retry-cpu" class="ghost" type="button">
             用 CPU 重试待处理音频</button
-          ><button id="save-audio" class="quiet" type="button">
+          ><button id="save-audio" class="link-button" type="button">
             下载待处理音频
           </button>
         </div>
       </section>
+
       <section
         id="progress-panel"
         class="progress-panel"
         aria-live="polite"
         hidden
       >
-        <span class="spinner" aria-hidden="true"></span>
-        <div>
-          <span id="progress-text">正在准备…</span
-          ><progress id="progress-meter" max="100" value="5"></progress>
+        <span class="pulse" aria-hidden="true"></span>
+        <div class="progress-body">
+          <span id="progress-text">正在准备…</span>
+          <progress id="progress-meter" max="100" value="5"></progress>
         </div>
-        <span id="elapsed">0s</span>
+        <span id="elapsed" class="elapsed">0s</span>
       </section>
+
       <div id="error" class="error" role="alert" hidden></div>
+
       <section id="reading" class="reading" hidden>
         <div class="source-card">
-          <span class="source-icon" aria-hidden="true">▷</span>
-          <div>
-            <h2 id="source-title"></h2>
-            <p id="source-meta"></p>
-          </div>
+          <h2 id="source-title"></h2>
+          <p id="source-meta"></p>
           <a
             id="source-link"
-            class="source-link"
+            class="link-button"
             target="_blank"
             rel="noopener noreferrer"
             >查看原视频 ↗</a
           >
         </div>
+
         <div class="reading-toolbar">
           <div class="tabs" role="tablist" aria-label="阅读内容">
             <button
@@ -228,29 +230,29 @@
             </button>
           </div>
           <div class="reading-actions">
-            <button id="copy" class="quiet" aria-label="复制内容" disabled>
+            <button id="copy" class="link-button" aria-label="复制内容" disabled>
               复制</button
             ><button
               id="download"
-              class="quiet"
+              class="link-button"
               aria-label="导出 Markdown"
               disabled
             >
-              导出 <span aria-hidden="true">↓</span>
-            </button>
+              导出</button
+            >
           </div>
         </div>
+
         <div id="notes-panel" role="tabpanel" aria-labelledby="notes-tab">
           <div id="article" class="article"></div>
           <div id="notes-empty" class="notes-empty">
-            <span aria-hidden="true">✧</span>
-            <h3>字幕已准备好。</h3>
-            <p>用自己的 API，把它整理成更易读的笔记。</p>
-            <button id="summarize-current" class="secondary">
+            <p>字幕已准备好。用自己的 API，把它整理成更易读的笔记。</p>
+            <button id="summarize-current" class="solid">
               根据字幕生成 →
             </button>
           </div>
         </div>
+
         <div
           id="transcript-panel"
           role="tabpanel"
@@ -259,52 +261,51 @@
         >
           <div class="transcript-header">
             <span id="transcript-status"
-              >完整字幕 ·
-              保留原始时间点。搜索仅筛选显示，复制与导出包含全文。</span
+              >完整字幕 · 保留原始时间点。</span
             ><input
               id="search"
               type="search"
               aria-label="搜索字幕"
-              placeholder="搜索字幕…"
+              placeholder="搜索…"
             />
           </div>
           <div id="transcript" class="transcript"></div>
         </div>
+
         <footer class="reading-footer">
           <span id="result-meta">内容基于字幕，关键事实建议回看核对。</span
           ><span id="reading-time"></span>
         </footer>
       </section>
+
       <section id="empty" class="empty">
-        <div class="paper-stack" aria-hidden="true">
-          <div class="paper-back"></div>
-          <div class="paper-front">
-            <span class="paper-play">▷</span><i></i><i></i><i></i
-            ><span class="paper-time">12:48 → 3 min</span>
-          </div>
-        </div>
-        <h2>好内容，换一种读法。</h2>
-        <p>课程、访谈、技术分享。<br />把观看的时间，留给思考。</p>
+        <p>Bilibili · YouTube · 其他公开链接</p>
       </section>
+
       <footer class="page-footer">
-        <span>readvideo <i>·</i> 字幕优先，内容为本。</span
+        <span>readvideo</span
         ><span id="provider-label">使用你自己的 API</span>
       </footer>
     </main>
+
     <input
       id="audio-file"
       type="file"
       accept="audio/*,.m4a,.mp3,.wav,.ogg,.flac,.mp4,.webm"
       hidden
     />
+    <input
+      id="subtitle-file"
+      type="file"
+      accept=".srt,.vtt,.json,.json3"
+      hidden
+    />
+
     <dialog id="collector-guide" aria-labelledby="collector-title">
       <div class="drawer-heading">
-        <div>
-          <span class="eyebrow">NO EXTENSION</span>
-          <h2 id="collector-title">原页获取，回这里阅读。</h2>
-        </div>
+        <h2 id="collector-title">原页获取，回这里阅读。</h2>
         <button
-          class="close"
+          class="icon-button close"
           id="collector-close"
           aria-label="关闭原页获取引导"
         >
@@ -312,7 +313,7 @@
         </button>
       </div>
       <p class="drawer-description">
-        适用于B站原页可以读取的独立音轨。无需安装扩展；这是一条需要手动运行脚本的备用方式。
+        适用于 B 站原页可以读取的独立音轨。无需安装扩展；这是一条需要手动运行脚本的备用方式。
       </p>
       <ol class="collector-steps">
         <li>
@@ -320,21 +321,20 @@
           <p>等播放器加载完成，不必播放完整视频。</p>
           <a
             id="collector-source"
-            class="secondary"
+            class="ghost"
             href="https://www.bilibili.com/"
             target="_blank"
             rel="noopener noreferrer"
-            >打开B站原视频 ↗</a
+            >打开 B 站原视频 ↗</a
           >
         </li>
         <li>
           <strong>在原页运行获取脚本。</strong>
           <p>
-            复制后，在B站页面的开发者工具 →
-            Console（控制台）中运行。只读取播放器中的音轨地址，不读取或导出
-            Cookie。若浏览器阻止粘贴，可停止此方式，使用音频共享或自行取得的音频文件。
+            复制后，在 B 站页面的开发者工具 → Console 中运行。只读取播放器中的音轨地址，不读取或导出
+            Cookie。
           </p>
-          <button id="collector-copy" class="primary" type="button">
+          <button id="collector-copy" class="solid" type="button">
             复制获取脚本
           </button>
           <details>
@@ -350,10 +350,9 @@
         <li>
           <strong>导入下载的音频。</strong>
           <p>
-            原页显示进度，点击“保存音轨”下载 M4A
-            文件；支持时自动并发下载，否则改用单流。回这里选择文件，本机转写完成后再生成文章。
+            原页显示进度，点击"保存音轨"下载 M4A 文件。回这里选择文件，本机转写完成后再生成文章。
           </p>
-          <button id="collector-import" class="secondary" type="button">
+          <button id="collector-import" class="ghost" type="button">
             选择音频文件
           </button>
         </li>
@@ -362,22 +361,14 @@
         不保证受限视频可用。音频不上传转写服务；只有生成文章时，文字才发送给你配置的模型服务。
       </p>
     </dialog>
-    <input
-      id="subtitle-file"
-      type="file"
-      accept=".srt,.vtt,.json,.json3"
-      hidden
-    />
+
     <dialog id="settings">
       <form id="settings-form">
         <div class="drawer-heading">
-          <div>
-            <span class="eyebrow">MAKE IT YOURS</span>
-            <h2>连接你的模型。</h2>
-          </div>
+          <h2>连接你的模型</h2>
           <button
             type="button"
-            class="close"
+            class="icon-button close"
             id="settings-close"
             aria-label="关闭配置"
           >
@@ -385,7 +376,7 @@
           </button>
         </div>
         <p class="drawer-description">
-          选择服务商，填入自己的 API。字幕只会在你生成内容时发送给所选服务。
+          填入自己的 API。字幕只会在你生成内容时发送给所选服务。
         </p>
         <label class="field"
           >服务商<select id="provider" aria-label="服务商">
@@ -415,12 +406,11 @@
               type="url"
               aria-label="视频解析服务"
               autocomplete="off"
-              placeholder="使用网站默认的 Cloudflare Worker"
+              placeholder="使用网站默认地址"
           /></label>
           <p class="field-note">
-            仅向视频服务发送链接和字幕语言；音轨由 Cloudflare
-            转发，转写仍在本机。模型 Key
-            不发送给视频服务。清空此项可使用原有网页读取方式。
+            仅向视频服务发送链接和字幕语言；音轨由你的浏览器直接下载，转写仍在本机。模型
+            Key 不发送给视频服务。
           </p>
           <label class="field"
             >Base URL<input
@@ -451,22 +441,22 @@
           hidden
         ></div>
         <div class="drawer-actions">
-          <button id="test-connection" type="button" class="secondary">
+          <button id="test-connection" type="button" class="ghost">
             测试连接</button
-          ><button class="primary" type="submit" aria-label="保存配置">
+          ><button class="solid" type="submit" aria-label="保存配置">
             保存配置
           </button>
         </div>
-        <div class="privacy-box">
-          <span>◈</span>
+        <div class="privacy-note">
           <p>
-            只保存服务地址、模型和语言偏好。<br /><strong
+            只保存服务地址、模型和语言偏好。<strong
               >Key 不落盘，刷新页面后需要重新填写。</strong
             >长字幕会分段生成，可能产生多次 API 调用。
           </p>
         </div>
       </form>
     </dialog>
+
     <div id="toast" class="toast" role="status" hidden></div>
     <script src="app.js" type="module"></script>
   </body>
