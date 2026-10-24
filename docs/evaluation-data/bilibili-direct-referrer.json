@@ -1,0 +1,119 @@
+{
+  "status": "premise verified; full download/ASR/article not exercised",
+  "sample": "BV1QAnB67EL3",
+  "title": "第四次工业革命为何发生？【小约翰？】",
+  "durationSeconds": 2512,
+  "nodeProbes": [
+    {
+      "kind": "player JSONP, no Origin",
+      "referrer": "https://www.bilibili.com/",
+      "status": 200,
+      "wrapped": true,
+      "code": 0,
+      "audioTracks": 3
+    },
+    {
+      "kind": "player JSONP, no Origin",
+      "referrer": "https://survivorno1.github.io/readvideo/app/",
+      "status": 403,
+      "wrapped": false
+    },
+    {
+      "kind": "player JSONP, no Origin",
+      "referrer": "https://survivorno1.github.io/readvideo/app/?r=https://www.bilibili.com",
+      "status": 403,
+      "wrapped": false
+    },
+    {
+      "kind": "CDN, readvideo Origin",
+      "host": "55ur29t.edge.mountaintoys.cn",
+      "referrer": "https://survivorno1.github.io/readvideo/app/",
+      "status": 403,
+      "bytes": 552,
+      "contentRange": null,
+      "cors": "*",
+      "ms": 182
+    },
+    {
+      "kind": "CDN, readvideo Origin",
+      "host": "55ur29t.edge.mountaintoys.cn",
+      "referrer": "https://survivorno1.github.io/readvideo/app/?r=https://www.bilibili.com",
+      "status": 206,
+      "bytes": 1024,
+      "contentRange": "bytes 0-1023/20627701",
+      "cors": "*",
+      "ms": 195
+    },
+    {
+      "kind": "CDN, readvideo Origin",
+      "host": "upos-sz-estgoss.bilivideo.com",
+      "referrer": "https://survivorno1.github.io/readvideo/app/",
+      "status": 403,
+      "bytes": 0,
+      "contentRange": null,
+      "cors": "https://survivorno1.github.io",
+      "ms": 281
+    },
+    {
+      "kind": "CDN, readvideo Origin",
+      "host": "upos-sz-estgoss.bilivideo.com",
+      "referrer": "https://survivorno1.github.io/readvideo/app/?r=https://www.bilibili.com",
+      "status": 206,
+      "bytes": 1024,
+      "contentRange": "bytes 0-1023/20627701",
+      "cors": "https://survivorno1.github.io",
+      "ms": 434
+    },
+    {
+      "kind": "CDN, readvideo Origin",
+      "host": "upos-sz-estgoss.bilivideo.com",
+      "referrer": "https://survivorno1.github.io/readvideo/app/",
+      "status": 403,
+      "bytes": 0,
+      "contentRange": null,
+      "cors": "https://survivorno1.github.io",
+      "ms": 70
+    },
+    {
+      "kind": "CDN, readvideo Origin",
+      "host": "upos-sz-estgoss.bilivideo.com",
+      "referrer": "https://survivorno1.github.io/readvideo/app/?r=https://www.bilibili.com",
+      "status": 206,
+      "bytes": 1024,
+      "contentRange": "bytes 0-1023/20627701",
+      "cors": "https://survivorno1.github.io",
+      "ms": 249
+    }
+  ],
+  "browser": {
+    "testedAt": "2026-10-24T13:55:58.938Z",
+    "sample": "BV1QAnB67EL3",
+    "duration": 2512,
+    "environment": "real Chrome; clean profile; public readvideo origin; resolver URLs obtained via local Node diagnostic",
+    "probes": [
+      {
+        "page": "https://survivorno1.github.io/readvideo/app/",
+        "mediaHost": "upos-sz-estgoss.bilivideo.com",
+        "status": 403,
+        "bytes": 0,
+        "type": "cors",
+        "contentRange": null,
+        "ms": 147
+      },
+      {
+        "page": "https://survivorno1.github.io/readvideo/app/?r=https://www.bilibili.com",
+        "mediaHost": "upos-sz-estgoss.bilivideo.com",
+        "status": 206,
+        "bytes": 1024,
+        "type": "cors",
+        "contentRange": "bytes 0-1023/20627701",
+        "ms": 86
+      }
+    ]
+  },
+  "limits": [
+    "Media address resolution used local Node, not deployed Cloudflare",
+    "Only a 1024-byte range was read in Chrome",
+    "Sandboxed bridge, full audio, ASR, LLM, refresh resume and mobile are not verified by this observation"
+  ]
+}

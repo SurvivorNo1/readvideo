@@ -1,8 +1,16 @@
-# readvideo browser-only specification (v0.3)
+# readvideo browser-first specification (v0.4 design)
 
-This supersedes the local Python runtime in SPEC.md. The approved interface remains. No application server, Python, extension, or ASR cloud API is required. The production artifact is a static GitHub Pages website with a working `/app/` application and Chinese/English product pages.
+## Current design revision: direct CDN audio
 
-## Behavior contracts, before implementation
+The approved primary path is now **Cloudflare metadata resolution → browser-direct CDN audio download → browser decode/ASR → browser-direct user-configured LLM**. The resolver returns audio-only CDN candidates and mirrors; Worker audio relay is an optional bounded fallback. No personal server, extension, source-page console or playback-length wait is part of the successful path. Captions still skip ASR. The existing capture/import routes are fallbacks, not the completion criterion.
+
+See [browser-direct-design.md](docs/browser-direct-design.md) for the adopted proposal, real Chrome premise evidence, download isolation, concurrency, stable checkpoint identity, CPU support, memory gates and requirement-level acceptance. A real Chrome 1,024-byte Range/CORS test passed for the supplied 41:52 sample using the proposal's full-page Referer method; complete download, ASR and article acceptance on this revised route are pending. Cloudflare resolution has separate unresolved HTTP 412 evidence.
+
+This section supersedes C1–C4's relay-first ordering below; those contracts describe the current experimental relay implementation. The target resolver may also accept strictly validated public video metadata; it never accepts provider credentials or user login cookies. The implementation must not treat unverified design claims as achieved features.
+
+Implementation baseline: the local Python prototype was removed. The approved interface, static GitHub Pages `/app/` application and Chinese/English product pages remain. Version 0.4 adds a Cloudflare metadata resolver; Python, extensions, a personal application server and a cloud ASR API are not part of the approved path.
+
+## Existing browser/capture implementation contracts (v0.3 baseline)
 
 - W1: Paste an HTTP(S) video link. Read accessible captions first. For supported YouTube/Bilibili URLs, offer an inline player and explicitly request this-tab audio through the browser's own picker. Keep the original-site link as a fallback for restricted embeds or unsupported URLs. Play, stop, drain the queue, then generate using the user's API. Captured audio never goes to an ASR service. Direct CORS-enabled media/subtitle links and imports are additional routes.
 - W2: Explain in the capture panel that sharing must include audio, capture follows playback, the user should start from the beginning, pauses/seeks/ads affect results, and timestamps are capture-relative unless a source offset is supplied. Never imply consent grants access to the entire original audio file. No microphone fallback or implicit recording. End all tracks and close audio contexts on stop/error/pagehide.
