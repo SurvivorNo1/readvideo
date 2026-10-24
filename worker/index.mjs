@@ -270,10 +270,49 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
   async function resolve(input, request, env) {
     const identity = videoIdentity(input.url),
       query = identity.aid ? { aid: identity.aid } : { bvid: identity.bvid };
+    let hintedPage;
     let view,
       embeddedPlay,
       anonymousCookie = "",
       initializationError;
+    if (input.public_info !== undefined) {
+      const h = input.public_info;
+      if (
+        !h ||
+        h.part !== identity.part ||
+        (identity.aid && String(h.aid) !== identity.aid) ||
+        (identity.bvid && h.bvid !== identity.bvid) ||
+        typeof h.bvid !== "string" ||
+        !/^BV\w{10}$/.test(h.bvid) ||
+        !Number.isSafeInteger(h.cid) ||
+        h.cid < 1 ||
+        !Number.isFinite(h.duration) ||
+        h.duration <= 0 ||
+        h.duration > 3600 ||
+        typeof h.title !== "string" ||
+        h.title.length > 1000
+      ) {
+        throw new Failure(
+          400,
+          "浏览器公开视频信息与提交链接不匹配或超出限制。",
+        );
+      }
+      hintedPage = {
+        cid: h.cid,
+        duration: h.duration,
+        part:
+          typeof h.part_title === "string" ? h.part_title.slice(0, 300) : "",
+      };
+      view = {
+        code: 0,
+        data: {
+          bvid: h.bvid,
+          cid: h.cid,
+          title: h.title,
+          duration: h.duration,
+        },
+      };
+    }
     const readApi = (path, params) => api(path, params, anonymousCookie);
     let wbiKeys;
     const signedApi = async (path, params) => {
@@ -293,67 +332,69 @@ export function createWorker({ fetcher = fetch, now = () => Date.now() } = {}) {
         ),
       );
     };
-    try {
-      view = await readApi("/x/web-interface/view", query);
-    } catch (apiFailure) {
-      // A platform-issued anonymous session is independent of the visitor's account.
+    if (!view)
       try {
-        const session = await api("/x/frontend/finger/spi", {});
-        const id = session.data?.b_3;
-        if (typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
-          anonymousCookie = "buvid3=" + id;
-          view = await readApi("/x/web-interface/view", query);
-        }
-      } catch (error) {
-        initializationError = error;
-      }
-      if (!view?.data) {
+        view = await readApi("/x/web-interface/view", query);
+      } catch (apiFailure) {
+        // A platform-issued anonymous session is independent of the visitor's account.
         try {
-          const detail = await signedApi(
-            "/x/web-interface/wbi/view/detail",
-            query,
-          );
-          if (detail.code === 0 && detail.data?.View)
-            view = { code: 0, data: detail.data.View };
+          const session = await api("/x/frontend/finger/spi", {});
+          const id = session.data?.b_3;
+          if (typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+            anonymousCookie = "buvid3=" + id;
+            view = await readApi("/x/web-interface/view", query);
+          }
         } catch (error) {
           initializationError = error;
         }
-      }
-      if (!view?.data) {
-        const video = new URL(
-          `https://www.bilibili.com/video/${identity.bvid || "av" + identity.aid}/`,
-        );
-        if (identity.part > 1) video.searchParams.set("p", identity.part);
-        const response = await fetcher(video.href, {
-          headers: platformHeaders(),
-          redirect: "manual",
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw new Failure(
-            502,
-            `${apiFailure.message} 视频页读取亦被拒绝（HTTP ${response.status}）。${initializationError ? " 匿名初始化：" + initializationError.message : ""}`,
-          );
+        if (!view?.data) {
+          try {
+            const detail = await signedApi(
+              "/x/web-interface/wbi/view/detail",
+              query,
+            );
+            if (detail.code === 0 && detail.data?.View)
+              view = { code: 0, data: detail.data.View };
+          } catch (error) {
+            initializationError = error;
+          }
         }
-        const html = await limitedText(response);
-        const state = pageJSON(html, "__INITIAL_STATE__");
-        const data = state?.videoData;
-        if (!data?.bvid || !data?.cid) throw apiFailure;
-        view = { code: 0, data };
-        // The page's selected cid must match before its embedded audio is used.
-        const page = data.pages?.[identity.part - 1];
-        if (
-          (identity.part === 1 && (!page || page.cid === data.cid)) ||
-          page?.cid === state.cid
-        )
-          embeddedPlay = pageJSON(html, "__playinfo__");
+        if (!view?.data) {
+          const video = new URL(
+            `https://www.bilibili.com/video/${identity.bvid || "av" + identity.aid}/`,
+          );
+          if (identity.part > 1) video.searchParams.set("p", identity.part);
+          const response = await fetcher(video.href, {
+            headers: platformHeaders(),
+            redirect: "manual",
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!response.ok) {
+            await response.body?.cancel();
+            throw new Failure(
+              502,
+              `${apiFailure.message} 视频页读取亦被拒绝（HTTP ${response.status}）。${initializationError ? " 匿名初始化：" + initializationError.message : ""}`,
+            );
+          }
+          const html = await limitedText(response);
+          const state = pageJSON(html, "__INITIAL_STATE__");
+          const data = state?.videoData;
+          if (!data?.bvid || !data?.cid) throw apiFailure;
+          view = { code: 0, data };
+          // The page's selected cid must match before its embedded audio is used.
+          const page = data.pages?.[identity.part - 1];
+          if (
+            (identity.part === 1 && (!page || page.cid === data.cid)) ||
+            page?.cid === state.cid
+          )
+            embeddedPlay = pageJSON(html, "__playinfo__");
+        }
       }
-    }
     const data = view?.data;
     if (view.code !== 0 || !data)
       throw new Failure(422, "无法读取该视频；可能已下架或存在访问限制。");
     const page =
+      hintedPage ||
       data.pages?.[identity.part - 1] ||
       (identity.part === 1 && data.cid ? { cid: data.cid } : null);
     if (!page?.cid) throw new Failure(422, "没有找到指定分P。");

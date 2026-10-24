@@ -38,6 +38,49 @@ test("public page JSON is parsed as data, including nested braces and escaped st
     null,
   );
 });
+test("browser public metadata can skip Worker metadata requests while identity and duration remain bounded", async () => {
+  const fixture = fixtures();
+  const worker = createWorker({ fetcher: fixture.fetcher });
+  const hint = {
+    aid: 728835116,
+    bvid: "BV1VS4y1t7st",
+    cid: 9,
+    part: 1,
+    duration: 118,
+    title: "Browser public metadata",
+  };
+  const response = await worker.fetch(
+    post({
+      url: "https://www.bilibili.com/video/av728835116/",
+      public_info: hint,
+    }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(
+    fixture.calls.some((c) => c.url.pathname === "/x/web-interface/view"),
+    false,
+  );
+  for (const invalid of [
+    { ...hint, aid: 1 },
+    { ...hint, cid: -1 },
+    { ...hint, duration: 3601 },
+    { ...hint, part: 2 },
+  ]) {
+    assert.equal(
+      (
+        await worker.fetch(
+          post({
+            url: "https://www.bilibili.com/video/av728835116/",
+            public_info: invalid,
+          }),
+          env,
+        )
+      ).status,
+      400,
+    );
+  }
+});
 test("a public video page supplies metadata and audio when the metadata API rejects requests", async () => {
   const fixture = fixtures();
   const worker = createWorker({

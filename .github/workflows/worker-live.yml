@@ -6,6 +6,11 @@ on:
         description: Public Cloudflare workers.dev root URL
         required: true
         type: string
+      browser_metadata:
+        description: Isolate audio relay using the known real sample identity (does not verify browser bootstrap)
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 jobs:
@@ -20,6 +25,7 @@ jobs:
       - name: Check actual Cloudflare resolution and complete audio
         env:
           READVIDEO_WORKER_URL: ${{ inputs.worker_url }}
+          READVIDEO_BROWSER_METADATA: ${{ inputs.browser_metadata }}
         run: node tests/worker-live.mjs
       - uses: actions/upload-artifact@v4
         if: always()

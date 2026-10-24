@@ -30,10 +30,30 @@ try {
   result.ingress = health.headers.get("cf-ray")?.split("-").pop() || null;
   if (!health.ok) throw Error("Health failed");
   const start = Date.now();
+  // Known real sample identifiers isolate the audio path. This is not an adapter
+  // for media or a claim that browser metadata collection was exercised here.
+  const hint =
+    process.env.READVIDEO_BROWSER_METADATA === "true"
+      ? {
+          aid: 728835116,
+          bvid: "BV1VS4y1t7st",
+          cid: 785724558,
+          part: 1,
+          duration: 118,
+          title: "Real public Bilibili sample",
+        }
+      : null;
+  result.metadataSource = hint
+    ? "known real sample identity; browser bootstrap not exercised"
+    : "Worker resolution";
   const r = await fetch(endpoint.origin + "/resolve", {
     method: "POST",
     headers: { Origin: origin, "Content-Type": "application/json" },
-    body: JSON.stringify({ url: result.sample, language: "auto" }),
+    body: JSON.stringify({
+      url: result.sample,
+      language: "auto",
+      ...(hint ? { public_info: hint } : {}),
+    }),
     signal: AbortSignal.timeout(90000),
   });
   result.resolveStatus = r.status;
