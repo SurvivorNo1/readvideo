@@ -313,10 +313,15 @@ self.onmessage = async ({ data }) => {
       ],
       cache: await cacheReport(),
     });
-  } catch {
+  } catch (error) {
+    // 把真实原因带出去，否则界面上只能看到一句无用的通用文案
+    const detail = `${error?.name || "Error"}: ${error?.message || error}`;
     post(id, "error", {
+      detail,
       message:
-        "浏览器识别失败。请检查模型下载网络或可用内存；已保留待处理音频，可用 CPU 重试或下载音频。",
+        "浏览器识别失败：" +
+        detail.slice(0, 160) +
+        "。可用 CPU 重试，或换用更小的模型。",
     });
   }
 };
