@@ -222,7 +222,8 @@ async function load(id, requested = "auto", modelKey = DEFAULT_MODEL) {
         : " · 首次使用，正在下载"),
   });
 
-  // 按文件聚合下载进度，避免多个文件各自 0→100 反复跳
+  // 按文件聚合下载进度。注意：分母会随着新文件加入而变大，
+  // 所以前端不显示百分比，只显示"已下载多少 MB"，避免数字倒退。
   const fileState = new Map();
   let lastPost = 0;
   const reportDownload = () => {
@@ -233,14 +234,15 @@ async function load(id, requested = "auto", modelKey = DEFAULT_MODEL) {
       total += s.total || 0;
     }
     const now = Date.now();
-    // 限流：最多每 250ms 报一次，避免刷屏
     if (now - lastPost < 250 && loaded < total) return;
     lastPost = now;
     post(id, "download", {
       loaded,
       total,
       files: fileState.size,
-      cached: cachedFiles > 0 && stats.hitBytes > before,
+      // 只有真的一字节都没下过，才算"从缓存载入"
+      cached: stats.missBytes === 0,
+      downloaded: stats.missBytes,
     });
   };
 

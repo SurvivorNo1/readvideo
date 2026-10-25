@@ -96,7 +96,7 @@ export class BrowserASR {
     factory = () =>
       // 带版本号：GitHub Pages 对 .mjs 有缓存，改了 worker 之后不带版本号
       // 用户那边还会跑旧代码。改 worker 时把这个数字加一。
-      new Worker(new URL("./asr-worker.mjs?v=7", import.meta.url), {
+      new Worker(new URL("./asr-worker.mjs?v=8", import.meta.url), {
         type: "module",
       }),
   ) {

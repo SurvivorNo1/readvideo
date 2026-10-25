@@ -358,30 +358,25 @@ function configureSession(url) {
         }
         return;
       }
-      // 下载/载入进度：只在数字真的有意义时才显示体积，
-      // 否则会出现 "100% (0.0/0.0 MB)" 这种自相矛盾的提示。
+      // 下载/载入进度。分母会随新文件加入而变大，所以不显示百分比，
+      // 只说已经下载了多少，数字不会倒退。
       if (p.type === "download") {
         const MB = 1048576;
-        const total = Number(p.total) || 0;
-        const loaded = Number(p.loaded) || 0;
-        const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+        const got = Number(p.downloaded) || 0;
+        const cached = p.cached === true;
         let text;
-        if (p.cached && total > 0 && loaded >= total) {
-          text = "识别模型已在本机缓存，载入完成";
-        } else if (total >= MB / 4) {
+        if (cached) {
+          text = "识别模型已在本机缓存，正在载入";
+        } else if (got >= MB / 8) {
           text =
-            "正在下载识别模型 · " +
-            pct +
-            "% （" +
-            (loaded / MB).toFixed(1) +
-            " / " +
-            (total / MB).toFixed(1) +
-            " MB）";
+            "正在下载识别模型 · 已下载 " +
+            (got / MB).toFixed(1) +
+            " MB" +
+            (p.files ? "（" + p.files + " 个文件）" : "");
         } else {
-          // 体积未知或极小：说明在从缓存读取，不假装在下载
-          text = p.cached ? "正在从本机缓存载入识别模型" : "正在载入识别模型";
+          text = "正在准备识别模型";
         }
-        progress(text, Math.max(6, Math.round(pct * 0.25)));
+        progress(text, Math.min(24, 6 + Math.floor(got / (MB * 8))));
         return;
       }
       if (p.message) {
