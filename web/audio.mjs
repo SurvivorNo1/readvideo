@@ -103,6 +103,7 @@ export class BrowserASR {
     this.sequence = 0;
     this.pending = new Map();
     this.backend = "auto";
+    this.model = "small";
     this.device = "";
     this.worker.onmessage = ({ data }) => {
       const task = this.pending.get(data.id);
@@ -131,6 +132,7 @@ export class BrowserASR {
         id,
         action,
         backend: this.backend,
+        model: this.model,
         ...payload,
       });
     });

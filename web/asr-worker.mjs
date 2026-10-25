@@ -6,11 +6,26 @@
 //   3. 无缓存 —— 每次都下载（隐私模式等）
 // 首次下载后会请求 navigator.storage.persist()，尽量避免被浏览器回收。
 
+// 可选模型。whisper-tiny 只有 39M 参数，中文识别和语种判断都偏弱，
+// 默认改用 whisper-small（244M），中英文都稳。
+const MODELS = {
+  tiny: "onnx-community/whisper-tiny",
+  base: "onnx-community/whisper-base",
+  small: "onnx-community/whisper-small",
+};
+const DEFAULT_MODEL = "small";
+
+// 语言代码 → Whisper 的 language 参数
+const LANGS = { zh: "chinese", en: "english", ja: "japanese", ko: "korean" };
+
 let pipeline,
   env,
   pipe,
   device,
   gpuFailed = false;
+let pipeModel = null;
+let autoLang = null; // 自动模式下来记住第一次判断出的语种
+
 const post = (id, type, data = {}) => self.postMessage({ id, type, ...data });
 
 // ─── 缓存实现 ───────────────────────────────────────────────
@@ -131,7 +146,9 @@ async function clearCache() {
 }
 
 // ─── 模型加载 ───────────────────────────────────────────────
-async function load(id, requested = "auto") {
+async function load(id, requested = "auto", modelKey = DEFAULT_MODEL) {
+  const modelId = MODELS[modelKey] || MODELS[DEFAULT_MODEL];
+
   if (!pipeline) {
     ({ pipeline, env } = await import(
       "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js"
@@ -163,13 +180,15 @@ async function load(id, requested = "auto") {
       if (await self.navigator.gpu.requestAdapter()) target = "webgpu";
     } catch {}
   }
-  if (pipe && target === device) {
+  // 设备或模型没变，直接复用
+  if (pipe && target === device && pipeModel === modelId) {
     post(id, "cache", await cacheReport());
     return;
   }
   if (pipe) {
     await pipe.dispose();
     pipe = null;
+    pipeModel = null;
   }
   device = target;
 
@@ -177,14 +196,19 @@ async function load(id, requested = "auto") {
   post(id, "stage", {
     message:
       (target === "webgpu" ? "正在准备 GPU 识别模型" : "正在准备 CPU 识别模型") +
+      `（${modelKey}）` +
       (cacheMode === "opfs" ? " · 本地缓存已启用" : ""),
   });
 
   const options = {
     device: target,
+    // 小模型在 WebGPU 上可以用 fp32；small 及以上用 q8 编码器，
+    // 否则显存占用会到 900MB 量级
     dtype:
       target === "webgpu"
-        ? { encoder_model: "fp32", decoder_model_merged: "q4" }
+        ? modelKey === "tiny"
+          ? { encoder_model: "fp32", decoder_model_merged: "q4" }
+          : { encoder_model: "q4", decoder_model_merged: "q4" }
         : "q8",
     progress_callback: (p) => {
       if (p.status === "progress")
@@ -199,17 +223,19 @@ async function load(id, requested = "auto") {
     },
   };
 
+
   try {
     pipe = await pipeline(
       "automatic-speech-recognition",
-      "onnx-community/whisper-tiny",
+      modelId,
       options,
     );
+    pipeModel = modelId;
   } catch (error) {
     if (target === "webgpu") {
       gpuFailed = true;
       post(id, "stage", { message: "GPU 暂不可用，正在切换 CPU" });
-      return load(id, "cpu");
+      return load(id, "cpu", modelKey);
     }
     throw error;
   }
@@ -223,7 +249,7 @@ async function load(id, requested = "auto") {
 
 // ─── 消息入口 ───────────────────────────────────────────────
 self.onmessage = async ({ data }) => {
-  const { id, action, audio, language = "auto", backend = "auto" } = data;
+  const { id, action, audio, language = "auto", backend = "auto", model = DEFAULT_MODEL } = data;
 
   if (action === "cache-info") {
     post(id, "done", { cache: await cacheReport() });
@@ -237,35 +263,65 @@ self.onmessage = async ({ data }) => {
 
   try {
     if (action === "load") {
-      await load(id, backend);
-      post(id, "done", { device, cache: await cacheReport() });
+      await load(id, backend, model);
+      post(id, "done", { device, model, cache: await cacheReport() });
       return;
     }
-    await load(id, backend);
-    const options = {
+    await load(id, backend, model);
+
+    // ★ 关键：transformers.js 的 Whisper 不做语种检测。
+    //   不传 language 会沿用模型自带的 <|en|>，中文音频会被硬转成英文。
+    //   传 null 无效；传 "auto" 会直接报错。所以这里自己判断：
+    //   先按中文跑，若结果里没有汉字，再按英文重跑一次。
+    const forced = LANGS[language];        // zh / en / ja / ko 时是明确值
+    const isAuto = !forced;
+
+    const buildOptions = (lang) => ({
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 0,
       task: "transcribe",
-      ...(language !== "auto"
-        ? { language: language === "zh" ? "chinese" : "english" }
-        : {}),
-    };
-    post(id, "stage", {
-      message: device === "webgpu" ? "GPU 正在识别音频" : "CPU 正在识别音频",
+      ...(lang ? { language: lang } : {}),
     });
+
+    post(id, "stage", {
+      message:
+        (device === "webgpu" ? "GPU 正在识别音频" : "CPU 正在识别音频") +
+        (isAuto ? " · 自动判断语种" : ""),
+    });
+
+    const hasHan = (s) => /[\u3400-\u9fff]/.test(s || "");
+
     let result;
+    let usedLang = forced || (autoLang || "chinese");
     try {
-      result = await pipe(new Float32Array(audio), options);
+      result = await pipe(new Float32Array(audio), buildOptions(usedLang));
     } catch (error) {
       if (device !== "webgpu") throw error;
       gpuFailed = true;
       post(id, "stage", { message: "GPU 识别失败，保留原音频并切换 CPU 重试" });
-      await load(id, "cpu");
-      result = await pipe(new Float32Array(audio), options);
+      await load(id, "cpu", model);
+      result = await pipe(new Float32Array(audio), buildOptions(usedLang));
     }
+
+    // 自动模式下：中文没出汉字 → 大概是英文内容，换英文重跑
+    if (isAuto && !hasHan(result.text)) {
+      post(id, "stage", { message: "未检测到中文，改用英文重新识别" });
+      try {
+        const retry = await pipe(new Float32Array(audio), buildOptions("english"));
+        if ((retry.text || "").trim()) {
+          result = retry;
+          usedLang = "english";
+        }
+      } catch {
+        /* 英文重跑失败就保留原结果 */
+      }
+    }
+    autoLang = usedLang;
+
     post(id, "done", {
       device,
+      language: usedLang,
       text: result.text,
       chunks: result.chunks || [
         {

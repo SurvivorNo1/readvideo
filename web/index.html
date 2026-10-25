@@ -141,6 +141,13 @@
         <details class="capture-options">
           <summary>识别设置与时间点</summary>
           <label
+            >识别模型
+            <select id="asr-model" aria-label="识别模型">
+              <option value="small" selected>标准 · 中英文均可靠（推荐）</option>
+              <option value="base">快速 · 体积小，准确率略低</option>
+              <option value="tiny">极速 · 最省资源，中文较弱</option>
+            </select></label
+          ><label
             >加速方式
             <select id="asr-backend" aria-label="识别加速方式">
               <option value="auto">自动 · GPU 优先，CPU 备用</option>

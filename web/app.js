@@ -332,6 +332,7 @@ function configureSession(url) {
     url,
     sameTab: !!currentPlayer && !preferOtherTab,
     language: $("#caption-language").value,
+    model: ($("#asr-model") || {}).value || "small",
     backend: $("#asr-backend").value,
     offset: Math.max(0, Number($("#capture-offset").value) || 0),
     onTranscript: (data) => {

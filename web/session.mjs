@@ -12,6 +12,7 @@ export class ReadingSession {
   constructor({
     url,
     language = "auto",
+    model = "small",
     backend = "auto",
     offset = 0,
     sameTab = false,
@@ -45,10 +46,12 @@ export class ReadingSession {
       requested_language: language,
       partial: true,
       timeline: "capture",
-      uploader: "Whisper tiny · 本机浏览器推理",
+      uploader: "本机浏览器推理",
     };
     this.asr = new BrowserASR((p) => onProgress(p));
     this.asr.backend = backend;
+    this.asr.model = model;
+    this.model = model;
     this.queue = new SerialQueue(
       async (job) => {
         let saved;
@@ -137,7 +140,7 @@ export class ReadingSession {
     if(typeof mediaURL === 'object') {
       const bytes=await fetchDirectAudio(mediaURL,progress,this.downloadController.signal);
       const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
-      this.audioIdentity=`asr:whisper-tiny-v1:24-2:${this.language}:${digest}`;
+      this.audioIdentity=`asr:${this.model||"small"}-v2:24-2:${this.language}:${digest}`;
       try{this.checkpoints=await openDownloadCache();}catch{}
       progress('音轨已完整下载 · 正在本机解码',26);
       jobs=await decodeAudioBytes(bytes);
