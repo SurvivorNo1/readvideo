@@ -468,7 +468,7 @@ try {
   await step(
     "CPU capture adapter keeps the stop tail through the actual AudioWorklet",
     async () => {
-      await page.route("**/asr-worker.mjs", (r) =>
+      await page.route("**/asr-worker.mjs*", (r) =>
         r.fulfill({
           status: 200,
           contentType: "text/javascript",

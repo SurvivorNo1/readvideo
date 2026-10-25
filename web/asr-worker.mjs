@@ -284,21 +284,60 @@ self.onmessage = async ({ data }) => {
       ...(lang ? { language: lang } : {}),
     });
 
+    // 关掉时间戳的版本，用于 quantized 解码器不支持时间戳时的回退
+    const plainOptions = (lang) => ({
+      return_timestamps: false,
+      task: "transcribe",
+      ...(lang ? { language: lang } : {}),
+    });
+
+    // 没有逐句时间戳时，按标点把整段文字按比例摊到窗口时长上。
+    // 精度不如模型自带的时间戳，但比整段只有一个时间点好得多。
+    const synthChunks = (text, seconds) => {
+      const parts = String(text || "")
+        .split(/(?<=[。！？!?；;])\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (parts.length <= 1)
+        return [{ timestamp: [0, seconds], text: String(text || "").trim() }];
+      const total = parts.reduce((n, p) => n + p.length, 0) || 1;
+      let at = 0;
+      return parts.map((p) => {
+        const span = (seconds * p.length) / total;
+        const chunk = { timestamp: [at, at + span], text: p };
+        at += span;
+        return chunk;
+      });
+    };
+
     post(id, "stage", {
       message:
         (device === "webgpu" ? "GPU 正在识别音频" : "CPU 正在识别音频") +
         ` · ${usedLang}`,
     });
 
+    const samples = new Float32Array(audio);
+    const seconds = samples.length / 16000;
+
+    // quantized 解码器有时不接受 return_timestamps（抛 token_ids 错误），
+    // 这时退回不带时间戳的推理，再按标点自己合成时间码。
     let result;
     try {
-      result = await pipe(new Float32Array(audio), buildOptions(usedLang));
+      result = await pipe(samples, buildOptions(usedLang));
     } catch (error) {
-      if (device !== "webgpu") throw error;
-      gpuFailed = true;
-      post(id, "stage", { message: "GPU 识别失败，保留原音频并切换 CPU 重试" });
-      await load(id, "cpu", model);
-      result = await pipe(new Float32Array(audio), buildOptions(usedLang));
+      post(id, "stage", {
+        message: "该模型不支持逐句时间戳，改为按标点估算时间码",
+      });
+      try {
+        const plain = await pipe(samples, plainOptions(usedLang));
+        result = { text: plain.text, chunks: synthChunks(plain.text, seconds) };
+      } catch (again) {
+        if (device !== "webgpu") throw again;
+        gpuFailed = true;
+        post(id, "stage", { message: "GPU 识别失败，保留原音频并切换 CPU 重试" });
+        await load(id, "cpu", model);
+        result = await pipe(samples, buildOptions(usedLang));
+      }
     }
 
     post(id, "done", {
