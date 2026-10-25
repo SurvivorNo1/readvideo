@@ -8,7 +8,7 @@ import {
 } from "./core.mjs";
 import { discoverSource, embeddedPlayer } from "./source.mjs";
 import { ReadingSession } from "./session.mjs";
-import { collectorScript } from "./collector.mjs";
+
 import { bilibiliVideo } from "./bilibili.mjs";
 import { resolveThroughEdge, edgeEndpoint } from "./edge.mjs";
 import { DEFAULT_EDGE_URL } from "./deployment.mjs";
@@ -730,57 +730,20 @@ $("#download").addEventListener("click", () => {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 });
-$("#import-open").addEventListener(
-  "click",
-  () => !busy && $("#subtitle-file").click(),
-);
-$("#collector-open").addEventListener("click", () => {
-  if (busy) return;
-  const url = $("#video-url").value.trim();
-  $("#collector-source").href =
-    embeddedPlayerSafeBili(url) || "https://www.bilibili.com/";
-  $("#collector-code").value = collectorScript();
-  $("#collector-guide").showModal();
-});
-function embeddedPlayerSafeBili(value) {
-  try {
-    const url = new URL(value);
-    if (
-      url.protocol === "https:" &&
-      !url.username &&
-      !url.password &&
-      ["bilibili.com", "www.bilibili.com", "m.bilibili.com"].includes(
-        url.hostname,
-      ) &&
-      /^\/video\/(BV[\w]{10}|av\d+)(?:\/|$)/.test(url.pathname)
-    )
-      return url.href;
-  } catch {}
-  return null;
-}
-$("#collector-close").addEventListener("click", () =>
-  $("#collector-guide").close(),
-);
-$("#collector-copy").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(collectorScript());
-    toast("已复制。请在B站原页运行，下载后回到这里导入音频。");
-  } catch {
-    $("#collector-code").focus();
-    $("#collector-code").select();
-    toast("请从“查看脚本”中手动复制。");
-  }
-});
-$("#audio-import-open").addEventListener(
-  "click",
-  () => !busy && $("#audio-file").click(),
-);
-$("#collector-import").addEventListener("click", () => {
-  if (!busy) {
-    $("#collector-guide").close();
-    $("#audio-file").click();
-  }
-});
+// 文件导入：界面上不再暴露手动入口（旧的"原页跑脚本 / 手动导入"方式已移除），
+// 但保留隐藏的 input 与处理管道，方便后续以拖拽等方式接入。
+const subtitleTrigger = $("#import-open");
+if (subtitleTrigger)
+  subtitleTrigger.addEventListener(
+    "click",
+    () => !busy && $("#subtitle-file").click(),
+  );
+const audioTrigger = $("#audio-import-open");
+if (audioTrigger)
+  audioTrigger.addEventListener(
+    "click",
+    () => !busy && $("#audio-file").click(),
+  );
 $("#audio-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file || busy) return;

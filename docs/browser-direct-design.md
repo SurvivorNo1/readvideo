@@ -2,6 +2,64 @@
 
 状态：2026-10-25 线上主链路已打通。VPS 轻量解析服务上线，真实 Chrome 在 GitHub Pages 上完成「粘贴链接 → 解析 → 直连 CDN 下载 → 浏览器 ASR → 完整字幕」全流程（22 条字幕 / 1,852 字符）。Cloudflare Worker 仍因 412 不可用，已改为 VPS 解析。
 
+## 2026-10-26 解析服务迁到 Vercel（已无 VPS）
+
+### 结论
+
+线上主链路继续可用，后端从自建 VPS 换成 Vercel Serverless。**VPS 已退出链路并卸载。**
+
+### 出口可达性实测
+
+B 站按 **IP 段**封禁，不是按厂商。同一份代码换个地方跑，结果完全不同：
+
+| 出口 | ASN | view | playurl | 主页 |
+|---|---|---|---|---|
+| Cloudflare Workers | AS13335 | 412 | 412 | 412「出错啦bilibili.com」 |
+| **Vercel (iad1)** | **AS14618 AWS** | **200** | **200** | **200** |
+| GitHub Actions | AS8075 Azure | 200 | 200 | 302 |
+| 国内校园网 | — | 200 | 200 | 200 |
+
+Cloudflare 的三种头（空 UA / Chrome UA / 不带任何头）全部 412，**连主页都打不开**，是整段封禁，不是配置问题。
+
+### 浏览器能做什么、不能做什么
+
+在真实 Chrome、`https://survivorno1.github.io` 源下逐项实测：
+
+| 机制 | `view`（元数据） | `playurl`（音轨地址） |
+|---|---|---|
+| `fetch` cors | ❌ Failed to fetch | ❌ |
+| `fetch` no-cors | 返回 opaque，读不了 | — |
+| JSONP 默认 / `no-referrer` / `unsafe-url` / `origin` / `same-origin` | ✅ 全部 200、code=0 | ❌ **五种策略全部 onerror** |
+| `<img>` / `<iframe>` | ❌ | ❌ |
+
+**所以纯前端做不到。** `Referer` 是浏览器的 forbidden header，JS 改不了；`playurl` 只认 `https://www.bilibili.com/`，页面不在 B 站域下就绕不过去。
+
+**但只需要这一个请求走服务端。** 下载、解码、ASR、文章生成仍然全在浏览器。
+
+### 现在的架构
+
+```text
+GitHub Pages 前端
+  → POST https://readvideo-resolve.vercel.app/api/resolve   （只返回地址）
+  → 浏览器直连 B站 CDN（4 路 Range）
+  → 浏览器 16 kHz 解码 + Whisper（OPFS 模型缓存）
+  → 浏览器直连用户配置的模型 API
+  → 文章 + 完整字幕
+```
+
+解析服务代码：<https://github.com/SurvivorNo1/readvideo-resolve>
+
+### 线上验收
+
+样本 `BV1VS4y1t7st`（2:01，无字幕，走 ASR）：解析 200 → 音轨 `206` 四路 → Whisper tiny → **22 条字幕**。
+同时确认 `journalctl -u readvideo --since -10min` 为空，即 VPS 已无任何请求。
+
+### 已知限制
+
+- `vercel.app` 在部分网络下被 DNS 污染：`curl` 解析到 `104.244.46.17` 无法连接，Chrome 走 DoH 正常。若打不开需换 DNS。
+- `playurl` 的 Referer 规则与 UA 规则随时可能调整；一旦收紧，需要重新找解析路径。
+- 旧的「B站原页跑脚本 / 手动导入」入口已从界面移除。
+
 ## 2026-10-25 VPS 解析服务上线
 
 ### 结论

@@ -94,15 +94,7 @@
                 </select></label
               >
             </div>
-            <div class="alt-actions">
-              <button id="collector-open" class="link-button" type="button">
-                B站原页取音轨</button
-              ><button id="audio-import-open" class="link-button" type="button">
-                导入音频</button
-              ><button id="import-open" class="link-button" type="button">
-                导入字幕文件</button
-              >
-            </div>
+
           </div>
         </form>
       </section>
@@ -300,67 +292,6 @@
       accept=".srt,.vtt,.json,.json3"
       hidden
     />
-
-    <dialog id="collector-guide" aria-labelledby="collector-title">
-      <div class="drawer-heading">
-        <h2 id="collector-title">原页获取，回这里阅读。</h2>
-        <button
-          class="icon-button close"
-          id="collector-close"
-          aria-label="关闭原页获取引导"
-        >
-          ×
-        </button>
-      </div>
-      <p class="drawer-description">
-        适用于 B 站原页可以读取的独立音轨。无需安装扩展；这是一条需要手动运行脚本的备用方式。
-      </p>
-      <ol class="collector-steps">
-        <li>
-          <strong>在原站打开视频。</strong>
-          <p>等播放器加载完成，不必播放完整视频。</p>
-          <a
-            id="collector-source"
-            class="ghost"
-            href="https://www.bilibili.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            >打开 B 站原视频 ↗</a
-          >
-        </li>
-        <li>
-          <strong>在原页运行获取脚本。</strong>
-          <p>
-            复制后，在 B 站页面的开发者工具 → Console 中运行。只读取播放器中的音轨地址，不读取或导出
-            Cookie。
-          </p>
-          <button id="collector-copy" class="solid" type="button">
-            复制获取脚本
-          </button>
-          <details>
-            <summary>查看脚本</summary>
-            <textarea
-              id="collector-code"
-              aria-label="原页音轨获取脚本"
-              readonly
-              spellcheck="false"
-            ></textarea>
-          </details>
-        </li>
-        <li>
-          <strong>导入下载的音频。</strong>
-          <p>
-            原页显示进度，点击"保存音轨"下载 M4A 文件。回这里选择文件，本机转写完成后再生成文章。
-          </p>
-          <button id="collector-import" class="ghost" type="button">
-            选择音频文件
-          </button>
-        </li>
-      </ol>
-      <p class="field-note">
-        不保证受限视频可用。音频不上传转写服务；只有生成文章时，文字才发送给你配置的模型服务。
-      </p>
-    </dialog>
 
     <dialog id="settings">
       <form id="settings-form">

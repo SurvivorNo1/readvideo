@@ -662,22 +662,9 @@ try {
     },
   );
   await step(
-    "manual Bilibili guide and local audio import work without a provider upload",
+    "local audio import works without a provider upload",
     async () => {
-      await page
-        .getByRole("button", { name: "B站原页取音轨", exact: true })
-        .click();
-      await page
-        .getByRole("heading", { name: "原页获取，回这里阅读。", exact: true })
-        .waitFor();
-      const script = await page.locator("#collector-code").inputValue();
-      assert.equal(
-        /document\.cookie|localStorage|sessionStorage/.test(script),
-        false,
-      );
-      await page
-        .getByRole("button", { name: "关闭原页获取引导", exact: true })
-        .click();
+
       const bytes = await page.evaluate(async () => {
         const { wavBlob } = await import("./audio.mjs");
         return [
