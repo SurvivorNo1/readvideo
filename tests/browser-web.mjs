@@ -503,7 +503,7 @@ try {
       await page.waitForFunction(() =>
         document
           .querySelector("#capture-status")
-          .textContent.includes("已采集 00:01"),
+          .textContent.includes("已转 00:01"),
       );
       await page
         .getByRole("button", { name: "停止采集，完成转写", exact: true })

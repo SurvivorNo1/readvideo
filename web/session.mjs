@@ -32,6 +32,7 @@ export class ReadingSession {
     this.onError = onError;
     this.onProgress = onProgress;
     this.elapsed = 0;
+    this.startedAt = 0;
     this.closed = false;
     this.downloadController = new AbortController();
     this.ended = false;
@@ -86,9 +87,19 @@ export class ReadingSession {
     );
   }
   status(extra = "") {
+    const now = Date.now();
+    const pending = this.queue.pendingSeconds;
+    // 用实测吞吐推算剩余时间，比固定倍率靠谱（不同设备差很多）
+    const done = Math.max(0, this.elapsed - pending);
+    const spent = (now - (this.startedAt || now)) / 1000;
+    const eta =
+      done > 5 && spent > 5 && pending > 0
+        ? Math.round((pending / (done / spent)))
+        : null;
     this.onStatus({
       elapsed: this.elapsed,
-      pending: this.queue.pendingSeconds,
+      pending,
+      eta,
       device: this.asr.device,
       error: this.queue.error,
       ended: this.ended,
@@ -146,6 +157,7 @@ export class ReadingSession {
       jobs=await decodeAudioBytes(bytes);
     } else jobs=await decodeMedia(mediaURL,progress);
     this.elapsed = jobs.at(-1)?.keepUntil || 0;
+    this.startedAt = Date.now();
     this.ended = true;
     for (const job of jobs) this.add(job);
     await this.finish();

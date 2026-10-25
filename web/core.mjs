@@ -47,7 +47,9 @@ export function windowAudio(pcm, rate = 16000, seconds = 24, overlap = 2) {
     const start = Math.max(0, own - overlap * rate),
       end = Math.min(pcm.length, own + (seconds + overlap) * rate);
     jobs.push({
-      audio: pcm.slice(start, end),
+      // subarray 是零拷贝视图。长音频（71 分钟 ≈ 275 MB 单声道）不会再复制出
+      // 一份同量级的内存；真正要传给 Worker 时，recognize 里才 slice 那一窗。
+      audio: pcm.subarray(start, end),
       offset: start / rate,
       keepFrom: own / rate,
       keepUntil: Math.min(pcm.length, own + seconds * rate) / rate,

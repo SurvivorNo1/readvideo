@@ -377,10 +377,15 @@ function configureSession(url) {
           : state.device === "wasm"
             ? "CPU / WASM"
             : "GPU 可选 · CPU 可用";
+      const etaText =
+        state.eta && state.eta > 30
+          ? ` · 预计还需 ${Math.ceil(state.eta / 60)} 分钟`
+          : "";
       $("#capture-status").textContent =
         (state.message ||
           (state.error ? "识别暂停，音频仍保留。" : "音频在浏览器内处理。")) +
-        ` 已采集 ${stamp(state.elapsed)} · 待处理 ${stamp(state.pending)}`;
+        ` 已转 ${stamp(state.elapsed - state.pending)} / ${stamp(state.elapsed)}` +
+        etaText;
       $("#recovery-actions").hidden = !state.error;
       if (state.ended) $("#capture-stop").hidden = true;
     },
