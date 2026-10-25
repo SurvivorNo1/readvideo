@@ -102,6 +102,20 @@ const opfsCache = {
   },
 };
 
+async function countCachedFiles() {
+  try {
+    const dir = await cacheRoot();
+    if (!dir) return 0;
+    let n = 0;
+    for await (const _ of dir.keys()) {
+      if (++n >= 4) break; // 只关心"有没有"，不需要精确数字
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
 async function cacheReport() {
   let quota = null,
     usage = null;
@@ -193,12 +207,42 @@ async function load(id, requested = "auto", modelKey = DEFAULT_MODEL) {
   device = target;
 
   const before = stats.hitBytes;
+
+  // 先看本机缓存里有没有模型文件，决定文案到底是"载入缓存"还是"下载"。
+  // 之前无论缓存与否都说"正在下载识别模型"，还会带上 (0.0/0.0 MB) 这种
+  // 没意义的数字，用户会以为每次都重新下了一遍。
+  const cachedFiles = await countCachedFiles();
+
   post(id, "stage", {
     message:
-      (target === "webgpu" ? "正在准备 GPU 识别模型" : "正在准备 CPU 识别模型") +
+      (target === "webgpu" ? "GPU 识别模型" : "CPU 识别模型") +
       `（${modelKey}）` +
-      (cacheMode === "opfs" ? " · 本地缓存已启用" : ""),
+      (cachedFiles > 0
+        ? " · 正在从本机缓存载入"
+        : " · 首次使用，正在下载"),
   });
+
+  // 按文件聚合下载进度，避免多个文件各自 0→100 反复跳
+  const fileState = new Map();
+  let lastPost = 0;
+  const reportDownload = () => {
+    let loaded = 0,
+      total = 0;
+    for (const s of fileState.values()) {
+      loaded += s.loaded || 0;
+      total += s.total || 0;
+    }
+    const now = Date.now();
+    // 限流：最多每 250ms 报一次，避免刷屏
+    if (now - lastPost < 250 && loaded < total) return;
+    lastPost = now;
+    post(id, "download", {
+      loaded,
+      total,
+      files: fileState.size,
+      cached: cachedFiles > 0 && stats.hitBytes > before,
+    });
+  };
 
   const options = {
     device: target,
@@ -211,15 +255,20 @@ async function load(id, requested = "auto", modelKey = DEFAULT_MODEL) {
           : { encoder_model: "q4", decoder_model_merged: "q4" }
         : "q8",
     progress_callback: (p) => {
-      if (p.status === "progress")
-        post(id, "download", {
-          file: p.file,
-          progress: p.progress,
-          loaded: p.loaded,
-          total: p.total,
+      if (!p || !p.file) return;
+      const prev = fileState.get(p.file) || { loaded: 0, total: 0 };
+      if (p.status === "progress") {
+        // 累加式还是绝对值式都兼容：取较大的那个
+        fileState.set(p.file, {
+          loaded: Math.max(prev.loaded, Number(p.loaded) || 0),
+          total: Number(p.total) || prev.total || 0,
         });
-      else if (p.status === "ready")
-        post(id, "download", { file: p.file, progress: 100 });
+        reportDownload();
+      } else if (p.status === "ready") {
+        const total = prev.total || Number(p.total) || 0;
+        fileState.set(p.file, { loaded: total, total });
+        reportDownload();
+      }
     },
   };
 

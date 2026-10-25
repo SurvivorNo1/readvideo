@@ -358,17 +358,36 @@ function configureSession(url) {
         }
         return;
       }
-      const size =
-        p.type === "download" && p.total
-          ? ` (${(p.loaded / 1048576).toFixed(1)}/${(p.total / 1048576).toFixed(1)} MB)`
-          : "";
-      progress(
-        p.message ||
-          (p.type === "download"
-            ? "正在下载识别模型 · " + Math.round(p.progress || 0) + "%" + size
-            : "准备浏览器识别"),
-        Math.round(p.progress || 10),
-      );
+      // 下载/载入进度：只在数字真的有意义时才显示体积，
+      // 否则会出现 "100% (0.0/0.0 MB)" 这种自相矛盾的提示。
+      if (p.type === "download") {
+        const MB = 1048576;
+        const total = Number(p.total) || 0;
+        const loaded = Number(p.loaded) || 0;
+        const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+        let text;
+        if (p.cached && total > 0 && loaded >= total) {
+          text = "识别模型已在本机缓存，载入完成";
+        } else if (total >= MB / 4) {
+          text =
+            "正在下载识别模型 · " +
+            pct +
+            "% （" +
+            (loaded / MB).toFixed(1) +
+            " / " +
+            (total / MB).toFixed(1) +
+            " MB）";
+        } else {
+          // 体积未知或极小：说明在从缓存读取，不假装在下载
+          text = p.cached ? "正在从本机缓存载入识别模型" : "正在载入识别模型";
+        }
+        progress(text, Math.max(6, Math.round(pct * 0.25)));
+        return;
+      }
+      if (p.message) {
+        progress(p.message, 10);
+        return;
+      }
     },
     onStatus: (state) => {
       $("#engine-label").textContent =
