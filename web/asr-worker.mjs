@@ -290,7 +290,17 @@ self.onmessage = async ({ data }) => {
         (isAuto ? " · 自动判断语种" : ""),
     });
 
-    const hasHan = (s) => /[\u3400-\u9fff]/.test(s || "");
+    // 判断"中文结果是不是幻觉"。
+    // 英文音频被强制按中文跑时，模型常输出 (音樂)/(音乐)/[Music] 这类空标签，
+    // 或高度重复的假中文。这两种都要回落英文。
+    const chineseLooksWrong = (text) => {
+      const t = String(text || "").replace(
+        /[\s()\[\]（）【】「」{}<>.,，。!！?？…·\-—_~"'“”‘’、:：;；]/g,
+        "",
+      );
+      if (t.length < 8) return true;
+      return new Set(t).size / t.length < 0.22;
+    };
 
     let result;
     let usedLang = forced || (autoLang || "chinese");
@@ -304,9 +314,9 @@ self.onmessage = async ({ data }) => {
       result = await pipe(new Float32Array(audio), buildOptions(usedLang));
     }
 
-    // 自动模式下：中文没出汉字 → 大概是英文内容，换英文重跑
-    if (isAuto && !hasHan(result.text)) {
-      post(id, "stage", { message: "未检测到中文，改用英文重新识别" });
+    // 自动模式：中文结果像幻觉 → 大概是英文内容，换英文重跑
+    if (isAuto && usedLang === "chinese" && chineseLooksWrong(result.text)) {
+      post(id, "stage", { message: "未识别到中文内容，改用英文重新识别" });
       try {
         const retry = await pipe(new Float32Array(audio), buildOptions("english"));
         if ((retry.text || "").trim()) {
