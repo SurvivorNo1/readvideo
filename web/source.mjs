@@ -273,8 +273,11 @@ export async function decodeAudioBytes(bytes) {
   try {
     const buffer=bytes.byteOffset===0&&bytes.byteLength===bytes.buffer.byteLength?bytes.buffer:bytes.slice().buffer;
     const decoded = await context.decodeAudioData(buffer);
-    if (decoded.duration > 3600)
-      throw Error("音频超过一小时，请分段处理。没有截断原音频。");
+    if (decoded.duration > 7200)
+      throw Error(
+        `音频 ${Math.round(decoded.duration / 60)} 分钟，超过 2 小时上限。` +
+          "浏览器需要把整段音频放进内存解码，更长的内容请先裁剪。没有截断原音频。",
+      );
     const mono = new Float32Array(decoded.length);
     for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
       const data = decoded.getChannelData(ch);
