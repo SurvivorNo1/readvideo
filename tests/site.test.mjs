@@ -36,9 +36,11 @@ test("static package contains only reviewed site/app files with resolvable local
       )) {
         const target = match[1];
         if (/^(https?:|data:)/.test(target)) continue;
+        // 构建时会给资源和入口脚本加 ?v=<hash> 做缓存穿透，比对文件时要去掉
+        const clean = target.split("?")[0];
         const resolved = path.resolve(
           path.dirname(path.join(directory, name)),
-          target,
+          clean,
         );
         assert.ok(resolved.startsWith(directory));
         const info = await fs.stat(resolved);
