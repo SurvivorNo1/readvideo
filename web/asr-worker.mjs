@@ -288,14 +288,31 @@ self.onmessage = async ({ data }) => {
     });
 
     // 按标点把整段文字按比例摊到窗口时长上。
-    // 精度不如模型自带的时间戳，但稳定，而且比整段只有一个时间点好得多。
+    // 没有标点时（whisper 偶尔整段不给标点），按字数切成便于阅读的小段。
     const synthChunks = (text, seconds) => {
-      const parts = String(text || "")
+      const raw = String(text || "").trim();
+      if (!raw) return [{ timestamp: [0, seconds], text: "" }];
+
+      let parts = raw
         .split(/(?<=[。！？!?；;])\s*/)
         .map((s) => s.trim())
         .filter(Boolean);
-      if (parts.length <= 1)
-        return [{ timestamp: [0, seconds], text: String(text || "").trim() }];
+
+      if (parts.length <= 1) {
+        // 无标点：按 42 个字左右硬切，尽量不切断英文单词
+        const size = 42;
+        parts = [];
+        let buf = "";
+        for (const ch of raw) {
+          buf += ch;
+          if (buf.length >= size && !/[A-Za-z0-9]$/.test(ch)) {
+            parts.push(buf.trim());
+            buf = "";
+          }
+        }
+        if (buf.trim()) parts.push(buf.trim());
+      }
+
       const total = parts.reduce((n, p) => n + p.length, 0) || 1;
       let at = 0;
       return parts.map((p) => {
