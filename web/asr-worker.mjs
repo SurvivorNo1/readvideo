@@ -24,7 +24,7 @@ let pipeline,
   device,
   gpuFailed = false;
 let pipeModel = null;
-let autoLang = null; // 自动模式下来记住第一次判断出的语种
+ // 自动模式下来记住第一次判断出的语种
 
 const post = (id, type, data = {}) => self.postMessage({ id, type, ...data });
 
@@ -270,11 +270,11 @@ self.onmessage = async ({ data }) => {
     await load(id, backend, model);
 
     // ★ 关键：transformers.js 的 Whisper 不做语种检测。
-    //   不传 language 会沿用模型自带的 <|en|>，中文音频会被硬转成英文。
-    //   传 null 无效；传 "auto" 会直接报错。所以这里自己判断：
-    //   先按中文跑，若结果里没有汉字，再按英文重跑一次。
-    const forced = LANGS[language];        // zh / en / ja / ko 时是明确值
-    const isAuto = !forced;
+    //   模型的 generation_config 把语言 token 写死成 <|en|>，
+    //   不传 language 就会把中文音频硬转成英文。
+    //   传 null 无效，传字符串 auto 直接报错。所以语种必须由调用方明确指定。
+    const forced = LANGS[language];
+    const usedLang = forced || "chinese";
 
     const buildOptions = (lang) => ({
       return_timestamps: true,
@@ -287,23 +287,10 @@ self.onmessage = async ({ data }) => {
     post(id, "stage", {
       message:
         (device === "webgpu" ? "GPU 正在识别音频" : "CPU 正在识别音频") +
-        (isAuto ? " · 自动判断语种" : ""),
+        ` · ${usedLang}`,
     });
 
-    // 判断"中文结果是不是幻觉"。
-    // 英文音频被强制按中文跑时，模型常输出 (音樂)/(音乐)/[Music] 这类空标签，
-    // 或高度重复的假中文。这两种都要回落英文。
-    const chineseLooksWrong = (text) => {
-      const t = String(text || "").replace(
-        /[\s()\[\]（）【】「」{}<>.,，。!！?？…·\-—_~"'“”‘’、:：;；]/g,
-        "",
-      );
-      if (t.length < 8) return true;
-      return new Set(t).size / t.length < 0.22;
-    };
-
     let result;
-    let usedLang = forced || (autoLang || "chinese");
     try {
       result = await pipe(new Float32Array(audio), buildOptions(usedLang));
     } catch (error) {
@@ -313,21 +300,6 @@ self.onmessage = async ({ data }) => {
       await load(id, "cpu", model);
       result = await pipe(new Float32Array(audio), buildOptions(usedLang));
     }
-
-    // 自动模式：中文结果像幻觉 → 大概是英文内容，换英文重跑
-    if (isAuto && usedLang === "chinese" && chineseLooksWrong(result.text)) {
-      post(id, "stage", { message: "未识别到中文内容，改用英文重新识别" });
-      try {
-        const retry = await pipe(new Float32Array(audio), buildOptions("english"));
-        if ((retry.text || "").trim()) {
-          result = retry;
-          usedLang = "english";
-        }
-      } catch {
-        /* 英文重跑失败就保留原结果 */
-      }
-    }
-    autoLang = usedLang;
 
     post(id, "done", {
       device,

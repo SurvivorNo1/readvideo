@@ -779,7 +779,8 @@ try {
       );
       assert.deepEqual(sent, {
         url: "https://www.bilibili.com/video/av728835116/",
-        language: "auto",
+        // 语种现在必须明确指定：浏览器端 Whisper 不做自动检测
+        language: "zh",
         transport: "direct-cdn",
       });
       assert.equal(generations.length, before + 1);

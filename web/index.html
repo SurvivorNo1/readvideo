@@ -57,7 +57,7 @@
             <button id="extract-only" class="link-button" type="button">
               仅读取字幕
             </button>
-            <span class="quick-hint">不需要模型 API</span>
+            <span class="quick-hint">不需要模型 API · 转写语种按上面的「语言」</span>
           </div>
 
           <div class="options-band">
@@ -87,10 +87,9 @@
                 </select></label
               >
               <label class="inline-field"
-                >字幕<select id="caption-language" aria-label="字幕语言">
-                  <option value="auto">原语言优先</option>
-                  <option value="zh">中文优先</option>
-                  <option value="en">英文优先</option>
+                >语言<select id="caption-language" aria-label="字幕语言">
+                  <option value="zh" selected>中文</option>
+                  <option value="en">English</option>
                 </select></label
               >
             </div>
