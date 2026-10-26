@@ -66,3 +66,146 @@ export async function openDownloadCache() {
       if(Date.now()-v.at>86400000||total>256000000)cursor.delete();cursor.continue();};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
   return {get:async key=>{const v=await run('readonly',s=>s.get(key));return v&&Date.now()-v.at<86400000?v.bytes:undefined;},put:(key,bytes)=>run('readwrite',s=>s.put({at:Date.now(),bytes},key)),close:()=>db.close()};
 }
+
+// ─────────────────────── 转录文字缓存 ───────────────────────
+//
+// 只存文字，不存音频。键里带视频 ID，方便「这个视频转过没有」和按视频清理。
+// 不设时间上限，按总量做 LRU，淘汰时整条视频一起删，不拆散。
+
+const TRANSCRIPT_BUDGET = 200 * 1024 * 1024; // 200 MB
+
+export function transcriptKey({ platform, videoId, model, language, windowStart }) {
+  return [
+    platform,
+    videoId,
+    model || "",
+    language || "",
+    "v1",
+    Math.round(windowStart * 10) / 10,
+  ].join("|");
+}
+
+export async function openTranscriptCache() {
+  if (!globalThis.indexedDB) return null;
+
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open("readvideo-transcripts", 1);
+    req.onupgradeneeded = () => {
+      const store = req.result.createObjectStore("transcripts");
+      store.createIndex("byVideo", ["platform", "videoId"]);
+      store.createIndex("byAt", "at");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
+  const run = (mode, action) =>
+    new Promise((resolve, reject) => {
+      const tx = db.transaction("transcripts", mode);
+      const request = action(tx.objectStore("transcripts"));
+      tx.oncomplete = () => resolve(request.result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+  const getAll = () =>
+    new Promise((resolve, reject) => {
+      const tx = db.transaction("transcripts", "readonly");
+      const request = tx.objectStore("transcripts").getAll();
+      tx.oncomplete = () => resolve(request.result || []);
+      tx.onerror = () => reject(tx.error);
+    });
+
+  /** 整条视频一起淘汰，避免留下半截字幕。 */
+  const prune = async (budget = TRANSCRIPT_BUDGET) => {
+    const all = await getAll();
+    let total = all.reduce((n, r) => n + (r.bytes || 0), 0);
+    if (total <= budget) return { removed: 0, freed: 0 };
+
+    const videos = new Map();
+    for (const r of all) {
+      const id = `${r.platform}|${r.videoId}`;
+      const entry = videos.get(id) || { keys: [], bytes: 0, at: 0 };
+      entry.keys.push(r.key);
+      entry.bytes += r.bytes || 0;
+      entry.at = Math.max(entry.at, r.at || 0);
+      videos.set(id, entry);
+    }
+
+    const order = [...videos.values()].sort((a, b) => a.at - b.at);
+    let removed = 0,
+      freed = 0;
+    for (const v of order) {
+      if (total <= budget) break;
+      await run("readwrite", (s) => {
+        for (const k of v.keys) s.delete(k);
+      });
+      total -= v.bytes;
+      freed += v.bytes;
+      removed += v.keys.length;
+    }
+    return { removed, freed };
+  };
+
+  return {
+    /** 命中返回 { text, chunks }，未命中返回 undefined */
+    get: (key) =>
+      run("readonly", (s) => s.get(key)).then((v) =>
+        v ? { text: v.text, chunks: v.chunks } : undefined,
+      ),
+    /** 一次问一批键，返回命中的键集合 */
+    has: async (keys) => {
+      if (!keys.length) return new Set();
+      const found = await run("readonly", (s) => {
+        const out = [];
+        for (const k of keys) {
+          const req = s.get(k);
+          req.onsuccess = () => {
+            if (req.result) out.push(k);
+          };
+        }
+        return out;
+      }).catch(() => []);
+      return new Set(found || []);
+    },
+    put: (key, record) => {
+      const text = String(record.text ?? "");
+      const chunks = Array.isArray(record.chunks) ? record.chunks : [];
+      return run("readwrite", (s) =>
+        s.put(
+          {
+            key,
+            text,
+            chunks,
+            start: record.start,
+            end: record.end,
+            platform: record.platform,
+            videoId: record.videoId,
+            model: record.model || "",
+            language: record.language || "",
+            title: record.title || "",
+            durationSec: record.durationSec || 0,
+            at: Date.now(),
+            bytes:
+              text.length * 2 +
+              chunks.reduce((n, c) => n + String(c.text || "").length * 2 + 40, 0) +
+              160,
+          },
+          key,
+        ),
+      );
+    },
+    /** 取整条视频的所有窗口，按时间排序 */
+    byVideo: async (platform, videoId) => {
+      const rows = await run("readonly", (s) =>
+        s.index("byVideo").getAll([platform, videoId]),
+      );
+      return (rows || [])
+        .map((r) => ({ start: r.start, end: r.end, text: r.text }))
+        .sort((a, b) => a.start - b.start);
+    },
+    clear: () => run("readwrite", (s) => s.clear()),
+    prune,
+    close: () => db.close(),
+  };
+}

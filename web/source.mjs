@@ -1,5 +1,7 @@
 import { parseCaptions, windowAudio } from "./core.mjs";
 import { bilibiliVideo, discoverBilibili } from "./bilibili.mjs";
+import { openAudioBridge } from "./direct-audio.mjs";
+import { parseSegmentIndex, groupFragments } from "./mp4-segment.mjs";
 export function embeddedPlayer(value) {
   const url = sourceURL(value),
     host = url.hostname.toLowerCase();
@@ -303,4 +305,148 @@ function resampleMedia(input, from) {
     out[i] = input[lo] * (1 - pos + lo) + input[hi] * (pos - lo);
   }
   return out;
+}
+
+// ───────────────────────── 分段转录 ─────────────────────────
+
+/** 窗口长度。Whisper 编码器输入固定 30 秒，用 30 秒窗口不浪费算力。 */
+export const WINDOW_SECONDS = 30;
+export const WINDOW_OVERLAP = 2;
+/** 每段音频多少秒。5 分钟 ≈ 3 MB 文件 + 57 MB 内存。 */
+export const CHUNK_SECONDS = 300;
+
+function mixdown(decoded) {
+  const mono = new Float32Array(decoded.length);
+  const channels = decoded.numberOfChannels;
+  for (let ch = 0; ch < channels; ch++) {
+    const data = decoded.getChannelData(ch);
+    for (let i = 0; i < mono.length; i++) mono[i] += data[i] / channels;
+  }
+  return mono;
+}
+
+/** 把一个已解码的 AudioBuffer 切成窗口任务，时间偏移到全局时间轴上。 */
+function bufferToJobs(decoded, baseSeconds) {
+  const mono = mixdown(decoded);
+  const rate = decoded.sampleRate;
+  let jobs = windowAudio(mono, rate, WINDOW_SECONDS, WINDOW_OVERLAP);
+  if (rate !== 16000)
+    jobs = jobs.map((job) => ({ ...job, audio: resampleMedia(job.audio, rate) }));
+  return jobs.map((job) => ({
+    ...job,
+    offset: job.offset + baseSeconds,
+    keepFrom: job.keepFrom + baseSeconds,
+    keepUntil: job.keepUntil + baseSeconds,
+  }));
+}
+
+/** 解码一段独立的 MP4（初始化段 + 若干片段），不设时长上限。 */
+async function decodeChunk(bytes) {
+  const context = new AudioContext({ sampleRate: 16000 });
+  try {
+    const buffer =
+      bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+        ? bytes.buffer
+        : bytes.slice().buffer;
+    return await context.decodeAudioData(buffer);
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * 分段流式读取 + 解码。产出的每一批窗口任务对应一段音频，
+ * 消费方处理完这一批之后，这一段的 PCM 就可以回收。
+ *
+ * 不是 fMP4 或没有 sidx 时返回 null，调用方退回整段路径。
+ *
+ * @param {{url:string, urls:string[], id:string}} source
+ * @param {(text:string, percent:number)=>void} progress
+ * @param {AbortSignal} [signal]
+ * @returns {AsyncGenerator<{jobs:Array, seconds:number, done:number, total:number}>|null}
+ */
+export async function openSegmentStream(source, progress = () => {}, signal) {
+  // 解析服务返回的是 { urls: [...] }，没有单数 url 字段。
+  // 多个地址按顺序轮换，某一个 CDN 主机抽风时能自动换下一个。
+  const urls = (source.urls?.length ? source.urls : [source.url]).filter(Boolean);
+  if (!urls.length) throw Error("音轨地址为空。");
+  let active = 0;
+
+  const bridge = await openAudioBridge(signal);
+  let closed = false;
+
+  /** 带轮换的区间读取：失败一次就换下一个地址重试。 */
+  const read = async (start, end) => {
+    let lastError;
+    for (let attempt = 0; attempt < Math.max(2, urls.length); attempt++) {
+      try {
+        return await bridge.read(urls[active % urls.length], start, end);
+      } catch (error) {
+        lastError = error;
+        active++; // 下次换一个 CDN 主机
+      }
+    }
+    throw lastError;
+  };
+
+  const release = () => {
+    if (closed) return;
+    closed = true;
+    bridge.close();
+  };
+  signal?.addEventListener("abort", release, { once: true });
+
+  try {
+    progress("正在读取音频索引", 8);
+    const head = await read(0, 262143);
+    const index = parseSegmentIndex(head);
+    if (!index) {
+      release();
+      return null;
+    }
+
+    const groups = groupFragments(index.fragments, CHUNK_SECONDS);
+    const totalSeconds = groups.reduce((n, g) => n + g.seconds, 0);
+    const init = head.slice(0, index.initBytes);
+    let done = 0;
+
+    return {
+      groups: groups.length,
+      totalSeconds,
+      async *[Symbol.asyncIterator]() {
+        try {
+          for (let i = 0; i < groups.length; i++) {
+            if (signal?.aborted) throw signal.reason || Error("已取消。");
+            const group = groups[i];
+            progress(
+              `正在读取第 ${i + 1} / ${groups.length} 段`,
+              10 + Math.round((20 * done) / totalSeconds),
+            );
+
+            const body = await read(group.startByte, group.endByte - 1);
+            const merged = new Uint8Array(init.length + body.length);
+            merged.set(init, 0);
+            merged.set(body, init.length);
+
+            const decoded = await decodeChunk(merged);
+            // 预期时长来自 sidx；对不上说明片段边界算错了
+            const drift = Math.abs(decoded.duration - group.seconds);
+            if (drift > 2)
+              throw Error(
+                `第 ${i + 1} 段解码时长 ${decoded.duration.toFixed(1)}s 与索引 ${group.seconds.toFixed(1)}s 不符，已停止。`,
+              );
+
+            const jobs = bufferToJobs(decoded, group.offset);
+            done += group.seconds;
+            yield { jobs, seconds: decoded.duration, done, total: totalSeconds };
+          }
+        } finally {
+          release();
+        }
+      },
+    };
+  } catch (error) {
+    release();
+    throw error;
+  }
 }

@@ -496,6 +496,10 @@ async function run(generate = true) {
           if (source.title) current.transcript.title = source.title;
           await current.startMedia(progress, source.transport === 'direct-cdn' ? source : source.url);
         } catch (error) {
+          // 把真实原因留在页面全局，方便排查；界面上仍然给用户看得懂的提示
+          globalThis.__rvLastError =
+            (error && (error.stack || error.message)) || String(error);
+          console.error("startMedia 失败", error);
           if (current.queue.jobs.length) throw error;
           current.close();
           preparePlayer(url);

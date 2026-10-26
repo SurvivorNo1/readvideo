@@ -5,9 +5,9 @@ import {
   mergeTranscript,
   wavBlob,
 } from "./audio.mjs";
-import { decodeMedia, decodeAudioBytes } from "./source.mjs";
+import { decodeMedia, decodeAudioBytes, openSegmentStream, WINDOW_SECONDS, WINDOW_OVERLAP } from "./source.mjs";
 import { fetchDirectAudio } from "./direct-audio.mjs";
-import { openDownloadCache } from './download.mjs';
+import { openDownloadCache, openTranscriptCache, transcriptKey } from "./download.mjs";
 export class ReadingSession {
   constructor({
     url,
@@ -55,15 +55,42 @@ export class ReadingSession {
     this.model = model;
     this.queue = new SerialQueue(
       async (job) => {
+        // 文字缓存：同一个视频、同一个窗口，转过就不再重跑。
+        const meta = this.cacheMeta;
+        const key = meta
+          ? transcriptKey({ ...meta, windowStart: job.offset })
+          : null;
         let saved;
-        const checkpoint=this.audioIdentity?`${this.audioIdentity}:${job.offset}:${job.keepUntil}`:null;
-        try{if(checkpoint)saved=await this.checkpoints?.get(checkpoint);}catch{}
+        if (key) {
+          try {
+            saved = await this.checkpoints?.get(key);
+          } catch {}
+        }
+
         await this.modelReady;
         let power = 0;
         for (const sample of job.audio) power += sample * sample;
         if (power === 0) return;
-        const result = saved && Array.isArray(saved.chunks) ? saved : await this.asr.recognize(job, this.language);
-        try{if(checkpoint&&!saved)await this.checkpoints?.put(checkpoint,result);}catch{}
+
+        let result;
+        if (saved && Array.isArray(saved.chunks) && saved.chunks.length) {
+          result = saved;
+          this.cacheHits = (this.cacheHits || 0) + 1;
+        } else {
+          result = await this.asr.recognize(job, this.language);
+          if (key && (result.text || "").trim()) {
+            try {
+              await this.checkpoints?.put(key, {
+                text: result.text,
+                chunks: result.chunks,
+                start: job.offset,
+                end: job.keepUntil,
+                ...meta,
+              });
+            } catch {}
+          }
+        }
+
         const shifted = {
           offset: job.offset + this.offset,
           keepFrom: job.keepFrom + this.offset,
@@ -147,18 +174,58 @@ export class ReadingSession {
     this.transcript.timeline = "media";
     this.modelReady = this.asr.load();
     this.modelReady.catch(() => {});
-    let jobs;
-    if(typeof mediaURL === 'object') {
-      const bytes=await fetchDirectAudio(mediaURL,progress,this.downloadController.signal);
-      const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
-      this.audioIdentity=`asr:${this.model||"small"}-v2:24-2:${this.language}:${digest}`;
-      try{this.checkpoints=await openDownloadCache();}catch{}
-      progress('音轨已完整下载 · 正在本机解码',26);
-      jobs=await decodeAudioBytes(bytes);
-    } else jobs=await decodeMedia(mediaURL,progress);
-    this.elapsed = jobs.at(-1)?.keepUntil || 0;
     this.startedAt = Date.now();
     this.ended = true;
+
+    // 直链音轨：优先走分段流式（内存与视频长度无关）。
+    // 不是 fMP4 或解析不出 sidx 时退回整段路径。
+    if (typeof mediaURL === "object") {
+      // 缓存键用人类可读的视频 ID（BV 号），拿不到就退回解析服务给的稳定哈希
+      const vid = (String(this.url).match(/BV[\w]{10}/) || [])[0] || mediaURL.id;
+      this.cacheMeta = {
+        platform: "bilibili",
+        videoId: vid,
+        model: this.model || "small",
+        language: this.language,
+        title: this.transcript.title || "",
+        durationSec: 0,
+      };
+      try {
+        this.checkpoints = await openTranscriptCache();
+      } catch {}
+
+      const stream = await openSegmentStream(
+        mediaURL,
+        progress,
+        this.downloadController.signal,
+      );
+      if (stream) {
+        this.cacheMeta.durationSec = Math.round(stream.totalSeconds);
+        this.transcript.duration = stream.totalSeconds;
+        this.status(`音频分 ${stream.groups} 段处理，内存占用恒定。`);
+        for await (const batch of stream) {
+          this.elapsed = batch.total;
+          for (const job of batch.jobs) this.add(job);
+        }
+        await this.finish();
+        return;
+      }
+
+      const bytes = await fetchDirectAudio(
+        mediaURL,
+        progress,
+        this.downloadController.signal,
+      );
+      progress("音轨已完整下载 · 正在本机解码", 26);
+      const jobs = await decodeAudioBytes(bytes);
+      this.elapsed = jobs.at(-1)?.keepUntil || 0;
+      for (const job of jobs) this.add(job);
+      await this.finish();
+      return;
+    }
+
+    const jobs = await decodeMedia(mediaURL, progress);
+    this.elapsed = jobs.at(-1)?.keepUntil || 0;
     for (const job of jobs) this.add(job);
     await this.finish();
   }

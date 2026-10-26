@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node tests/static-server.mjs web 4186",
     "build": "node tools/build-site.mjs",
-    "test": "node --test tests/web-core.test.mjs tests/audio.test.mjs tests/source.test.mjs tests/site.test.mjs tests/bilibili.test.mjs tests/collector.test.mjs tests/edge.test.mjs tests/transport.test.mjs tests/download.test.mjs",
+    "test": "node --test tests/web-core.test.mjs tests/audio.test.mjs tests/source.test.mjs tests/site.test.mjs tests/bilibili.test.mjs tests/collector.test.mjs tests/edge.test.mjs tests/transport.test.mjs tests/download.test.mjs tests/mp4-segment.test.mjs",
     "test:browser": "node tests/browser-web.mjs",
     "test:asr:live": "node tests/asr-live.mjs",
     "worker:dev": "wrangler dev --config worker/wrangler.jsonc",
