@@ -22,10 +22,51 @@
 | 平台 | 结论 | 要不要服务器 |
 |---|---|---|
 | **B 站** | ✅ 已支持 | 不需要（现有 Vercel 免费函数够） |
-| **YouTube** | ✅ **可行**：Innertube 用 IOS 客户端拿字幕 | **不需要**，纯 HTTP，跑现有免费函数 |
-| **抖音** | ✅ **可行**：书签小工具拿直链，CDN 有 CORS | **不需要**，浏览器自己下载 |
+| **YouTube** | ❌ **免费出口全部被 Google 拦** | **要么有服务器，要么放弃自动** |
+| **抖音** | ✅ **可行**：书签小工具拿直链，CDN 有 CORS | 不需要，浏览器自己下载 |
 
-三个平台都能在「零服务器、零成本」的前提下做出来。
+---
+
+## 1.5 YouTube 的实测结论（2026-10 复核）
+
+配方本身是对的，但**出口 IP 决定成败**。同一套代码、同一时刻的结果：
+
+| 出口 | `M7lc1UVf-VE` | `jNQXAC9IVRw` | `dQw4w9WgXcQ` |
+|---|---|---|---|
+| 腾讯云 VPS | ✅ OK · 65,976 字节 | ✅ OK · 918 字节 | ✅ OK · 8,079 字节 |
+| **Vercel（AWS）** | ❌ ERROR | ❌ ERROR | ✅ 侥幸通过 |
+| **Cloudflare Workers** | ❌ `LOGIN_REQUIRED` | ❌ `LOGIN_REQUIRED` | ❌ `LOGIN_REQUIRED` |
+| **浏览器跨域** | ❌ CORS | ❌ CORS | ❌ CORS |
+| **浏览器同源**（站在 youtube.com 上） | ❌ 字幕 **0 字节** | — | — |
+
+逐步排除的过程：
+
+| 尝试 | 结果 |
+|---|---|
+| IOS 客户端 ＋ 多客户端轮换 ＋ visitorData（部署在 Vercel） | ❌ 只有极少数视频能过，其余 `playabilityStatus: ERROR` |
+| 同上，部署到 Cloudflare Worker（`--temporary` 免登录） | ❌ `LOGIN_REQUIRED: Sign in to confirm you're not a bot` |
+| 浏览器直接 fetch innertube | ❌ `TypeError: Failed to fetch`（无 ACAO） |
+| 浏览器在 youtube.com 页面内 fetch `baseUrl` | ❌ HTTP 200 但 **0 字节** |
+| `get_transcript` ＋ 自造 params | ❌ HTTP 400 |
+| `get_transcript` ＋ 页面里真实的 `getTranscriptEndpoint.params` | ❌ **`FAILED_PRECONDITION`**（缺 PoToken） |
+| 点「Show transcript」后读 DOM | ❌ 面板未渲染，`ytd-transcript-segment-renderer` 为 0 |
+
+**根本原因：** YouTube 现在对字幕接口强制 PoToken。PoToken 需要跑 BotGuard VM
+（`bgutils-js` ＋ DOM 环境）才能生成，而 BotGuard 本身又会检测自动化环境。
+免费 serverless 的出口 IP 一律被判定为 bot。
+
+**所以 YouTube 只有三条路：**
+
+| 方案 | 成本 | 体验 |
+|---|---|---|
+| **A. 保持现状：标签页音频授权** | 0 | 要播放视频，转写耗时≈视频时长 |
+| B. 搞一台自己的服务器（VPS / 树莓派 / 家宽） | 要钱或要设备 | 全自动，秒级拿字幕 |
+| C. 书签工具让用户手动开字幕稿再抓 DOM | 0 | 每次点两下，且面板不一定渲染 |
+
+**建议：YouTube 保持方案 A（现有功能），把精力放在抖音上。**
+哪天有了稳定出口（自建或租一台便宜机器），把 `resolve-core.mjs` 里的
+YouTube 分支打开就能用——代码已经写好并验证过配方。
+
 
 ---
 

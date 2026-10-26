@@ -182,7 +182,248 @@ async function fetchCaptions(bvid, cid) {
   }
 }
 
-export async function resolveVideo(input, { totalTimeoutMs = 15000 } = {}) {
+// ─────────────────────────── YouTube ───────────────────────────
+//
+// 铁律（实测得来，违反任何一条都会失败）：
+//   1. 【不发 Origin】。发了会被 Google 判为自动化请求，直接 403「We're sorry...」。
+//   2. 【不发 User-Agent】。和 B 站一样的教训，验证过不需要。
+//   3. 客户端必须是 IOS 系。WEB 返回 UNPLAYABLE，ANDROID 返回 400。
+//      只有 IOS 拿到的 captionTracks 地址不需要 PoToken。
+//   4. 裸调 api/timedtext 一律 200 + 0 字节（八种参数组合都试过），
+//      只能走 captionTracks 里的 baseUrl。
+//   5. 数据中心 IP 会被风控（"Sign in to confirm you're not a bot"）。
+//      所以要带 visitorData，并且准备多套客户端轮换，任一套通过就行。
+
+const YT_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+const YT_API = `https://www.youtube.com/youtubei/v1`;
+
+const YT_CLIENTS = [
+  {
+    name: "IOS",
+    client: {
+      clientName: "IOS",
+      clientVersion: "20.10.4",
+      deviceMake: "Apple",
+      deviceModel: "iPhone16,2",
+      osName: "iPhone",
+      osVersion: "18.3.2.22D82",
+      hl: "en",
+    },
+  },
+  {
+    name: "IOS-OLD",
+    client: {
+      clientName: "IOS",
+      clientVersion: "19.45.4",
+      deviceMake: "Apple",
+      deviceModel: "iPhone14,3",
+      osName: "iPhone",
+      osVersion: "16.6.0.20G75",
+      hl: "en",
+    },
+  },
+  {
+    name: "ANDROID-VR",
+    client: {
+      clientName: "ANDROID_VR",
+      clientVersion: "1.62.27",
+      deviceMake: "Oculus",
+      deviceModel: "Quest 3",
+      osName: "Android",
+      osVersion: "12L",
+      androidSdkVersion: 32,
+      hl: "en",
+    },
+  },
+  {
+    name: "TV",
+    client: {
+      clientName: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+      clientVersion: "2.0",
+      hl: "en",
+    },
+  },
+];
+
+const RE_YT =
+  /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([\w-]{11})/;
+
+export function parseYouTubeId(input) {
+  const m = String(input).match(RE_YT);
+  return m ? m[1] : null;
+}
+
+/** 取一个 visitorData。数据中心 IP 没有它很容易被要求 "Sign in to confirm"。 */
+async function ytVisitorData(client) {
+  try {
+    const res = await fetch(`${YT_API}/visitor_id?key=${YT_KEY}&prettyPrint=false`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: { client } }),
+      signal: AbortSignal.timeout(4000),
+    });
+    const d = await res.json();
+    return d?.responseContext?.visitorData || "";
+  } catch {
+    return "";
+  }
+}
+
+async function ytPlayerOnce(videoId, entry, visitorData) {
+  const client = visitorData
+    ? { ...entry.client, visitorData }
+    : entry.client;
+  const res = await fetch(`${YT_API}/player?key=${YT_KEY}&prettyPrint=false`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(visitorData ? { "X-Goog-Visitor-Id": visitorData } : {}),
+    },
+    body: JSON.stringify({
+      videoId,
+      context: { client },
+      contentCheckOk: true,
+      racyCheckOk: true,
+    }),
+    signal: AbortSignal.timeout(7000),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** 依次尝试多套客户端 + 有无 visitorData，返回第一个能拿到字幕轨的响应。 */
+async function ytPlayer(videoId) {
+  let lastStatus = "";
+  for (const entry of YT_CLIENTS) {
+    for (const withVisitor of [true, false]) {
+      let vd = "";
+      if (withVisitor) vd = await ytVisitorData(entry.client);
+      let data;
+      try {
+        data = await ytPlayerOnce(videoId, entry, vd);
+      } catch {
+        continue;
+      }
+      if (!data) continue;
+      const status = data?.playabilityStatus?.status;
+      const tracks =
+        data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      if (status === "OK" && tracks.length) return data;
+      lastStatus = status || lastStatus;
+    }
+  }
+  if (/SIGN_IN|LOGIN_REQUIRED|BOT/i.test(lastStatus))
+    throw new ResolveError(
+      "YouTube 要求验证（数据中心 IP 被风控）。可以打开原页并授权本页音频来转写。",
+      403,
+      lastStatus,
+    );
+  throw new ResolveError(
+    `拿不到 YouTube 播放信息（最后状态：${lastStatus || "无响应"}）。` +
+      "可以打开原页并授权本页音频来转写。",
+    404,
+    lastStatus || "no_response",
+  );
+}
+
+function parseJson3Captions(text) {
+  const data = JSON.parse(text);
+  const segments = [];
+  for (const e of data?.events || []) {
+    if (e?.tStartMs == null || !Array.isArray(e.segs)) continue;
+    const body = e.segs
+      .map((s) => s?.utf8 || "")
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!body) continue;
+    const start = e.tStartMs / 1000;
+    const end = (e.tStartMs + (e.dDurationMs || 0)) / 1000;
+    segments.push({ start, end: Math.max(end, start + 0.05), text: body });
+  }
+  return segments;
+}
+
+async function resolveYouTube(videoId, input, language = "auto") {
+  const data = await ytPlayer(videoId);
+
+  if (!data) {
+    throw new ResolveError(
+      "拿不到 YouTube 的播放信息。这个视频可能已删除、受限地区，或需要登录。" +
+        "可以打开原页并授权本页音频来转写。",
+      404,
+      "no_player_data",
+    );
+  }
+
+  const status = data?.playabilityStatus?.status;
+  if (status && status !== "OK") {
+    const reason = data?.playabilityStatus?.reason || status;
+    throw new ResolveError(
+      `YouTube 无法播放这个视频：${String(reason).slice(0, 120)}。` +
+        "可以打开原页并授权本页音频来转写。",
+      403,
+      status,
+    );
+  }
+
+  const title = String(data?.videoDetails?.title || "YouTube 视频").slice(0, 1000);
+  const duration = Number(data?.videoDetails?.lengthSeconds) || 0;
+  const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+
+  if (!tracks.length) {
+    throw new ResolveError(
+      "这个 YouTube 视频没有可用字幕。可以打开原页并授权本页音频来转写。",
+      404,
+      "no_captions",
+    );
+  }
+
+  const want = String(language || "auto").toLowerCase();
+  const matches = (t) =>
+    want !== "auto" && String(t.languageCode || "").toLowerCase().startsWith(want);
+
+  const pick =
+    tracks.find((t) => matches(t) && !t.kind) ||
+    tracks.find((t) => matches(t)) ||
+    tracks.find((t) => String(t.languageCode || "").startsWith("en") && !t.kind) ||
+    tracks.find((t) => String(t.languageCode || "").startsWith("en")) ||
+    tracks[0];
+
+  const base = pick.baseUrl || pick.url;
+  if (!base) throw new ResolveError("YouTube 没有返回字幕地址", 502);
+
+  const sub = await fetch(base + "&fmt=json3", {
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!sub.ok) throw new ResolveError(`获取字幕失败：HTTP ${sub.status}`, 502);
+  const segments = parseJson3Captions(await sub.text());
+  if (!segments.length)
+    throw new ResolveError(
+      "这个视频的字幕是空的。可以打开原页并授权本页音频来转写。",
+      404,
+      "empty_captions",
+    );
+
+  return {
+    kind: "captions",
+    title,
+    duration,
+    language: pick.languageCode || "unknown",
+    automatic: pick.kind === "asr",
+    tracks: tracks.slice(0, 12).map((t) => ({
+      language: t.languageCode || "unknown",
+      automatic: t.kind === "asr",
+    })),
+    segments,
+    source_url: `https://www.youtube.com/watch?v=${videoId}`,
+  };
+}
+
+export async function resolveVideo(input, { totalTimeoutMs = 15000, language = "auto" } = {}) {
+  const ytId = parseYouTubeId(input);
+  if (ytId) return resolveYouTube(ytId, input, language);
+
   const parsed = parseVideoId(input);
   if (!parsed) throw new ResolveError("无法识别视频链接", 400);
 
