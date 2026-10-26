@@ -1,287 +1,224 @@
 # 方案 2：YouTube 与抖音支持
 
-> 状态：**待讨论，未开发**
-> 前置：建议先落地方案 1（分段转录 + 文字缓存），方案 2 复用它的缓存和分段能力。
-> 说明：本文档只写方案和探测线索，**没有动任何代码**。
+> 状态：**方案已定，未开发**
+> 前置：建议先落地方案 1（分段转录 + 文字缓存），方案 2 复用它的缓存。
+> 硬约束（用户明确）：**没有服务器，不花钱，可以用开源。**
 
 ---
 
-## 1. 要解决什么
+## 1. 结论先行
 
-现在只支持 B 站：
-
-| 平台 | 现状 | 说明 |
+| 平台 | 结论 | 要不要服务器 |
 |---|---|---|
-| B 站 | ✅ 完整支持 | 解析、字幕、直链音轨、分段转录 |
-| **YouTube** | ⚠️ 只有半条路 | 能从页面 DOM 里读字幕轨；音频只能靠「标签页音频授权」 |
-| **抖音** | ❌ 完全不支持 | `embeddedPlayer()` 里没有抖音的分支 |
+| **B 站** | ✅ 已支持 | 不需要（现有 Vercel 免费函数够） |
+| **YouTube** | ✅ **可行**：Innertube 用 IOS 客户端拿字幕 | **不需要**，纯 HTTP，跑现有免费函数 |
+| **抖音** | ✅ **可行**：书签小工具拿直链，CDN 有 CORS | **不需要**，浏览器自己下载 |
 
-目标：
-
-- YouTube：给链接就能出字幕或文章，不用开标签页授权
-- 抖音：给分享链接就能出字幕或文章
+三个平台都能在「零服务器、零成本」的前提下做出来。
 
 ---
 
-## 2. 已验证的探测结果
+## 2. YouTube 的完整验证过程
 
-以下全部是实测，不是推测。探测环境：服务器（腾讯云 IP）+ 浏览器（住宅 IP）。
+### 2.1 走过的弯路（都验证过，都失败）
 
-### 2.1 YouTube
-
-| 探测 | 结果 |
+| 方案 | 结果 |
 |---|---|
-| `youtubei/v1/player` + **ANDROID** 客户端 | ❌ HTTP 400，`adaptiveFormats: 0` |
-| `youtubei/v1/player` + **WEB** 客户端 | ⚠️ HTTP 200，但 `playabilityStatus: UNPLAYABLE`，`adaptiveFormats: 0` |
-| 同上，能否拿到元信息 | ✅ 标题、`lengthSeconds` 正常 |
-| watch 页 HTML（1.4 MB） | ✅ 里面带 `captionTracks`，6 条轨道 |
-| 直接请求 `api/timedtext`（**8 种参数组合全试过**） | ❌ **全部 HTTP 200 但 0 字节**，`content-type: text/html` |
-| 浏览器页面内（同源、带 cookie）请求 timedtext | ❌ HTTP **429**（限流），拿不到内容 |
-| **服务器上 `yt-dlp`** | ✅ **完全成功** |
+| 裸调 `api/timedtext`（8 种参数组合） | ❌ 全部 **HTTP 200 + 0 字节** |
+| 在浏览器页面内（同源、带 cookie）调 timedtext | ❌ HTTP 429 |
+| `youtubei/v1/player` + **ANDROID** 客户端 | ❌ HTTP 400 |
+| `youtubei/v1/player` + **WEB** 客户端 | ❌ `playabilityStatus: UNPLAYABLE` |
+| `youtubei.js`（WEB 客户端） | ❌ 拿到 baseUrl，内容仍 0 字节 |
+| `youtubei.js` 其他客户端 | ❌ 解析器只认 WEB 形状，报 `Cannot read properties of null` |
+| 公共 Piped 实例 `api.piped.private.coffee` | ⚠️ 有元信息，它的代理返回 **502** |
+| 公共 Invidious `inv.nadeko.net` | ⚠️ 字幕列表正常、**CORS `*`**，但内容 0 字节 |
+| `youtubetranscript.com` | ❌ "YouTube is currently blocking" |
+| `api.allorigins.win` + watch 页 | ❌ HTTP 522 |
+| `r.jina.ai` + watch 页 | ❌ 只返回文字摘要，没有时间码 |
+| 服务器上 `yt-dlp` | ✅ 能拿到，但**需要真实服务器**（用户没有） |
 
-**重要更正：** 一开始看到 `timedtext` 返回 HTTP 200 就以为通了，实际是 **0 字节空响应**。
-YouTube 现在普遍要求 PoToken，裸调 `timedtext` 拿不到内容。参数组合全部试过：
+**根本原因：** YouTube 现在要求 PoToken，裸 timedtext 一律返回空 body。
 
-```
-原样 / fmt=json3 / fmt=srv3 / fmt=vtt / fmt=json3&c=WEB
-fmt=json3&c=ANDROID / fmt=json3&potc=1 / fmt=json3&xorb=2&xobt=3&xovt=3
-裸接口 v+lang+fmt
-→ 全部 200 + 0 字节
-```
+### 2.2 最终可行的配方
 
-**走 `yt-dlp` 就通了**（服务器上实测，yt-dlp 2026.10.21）：
-
-```
-$ yt-dlp --skip-download --write-subs --write-auto-subs \
-    --sub-langs "en.*" --sub-format json3 -o "/tmp/sub.%(ext)s" <url>
-
-[info] Available automatic captions: en / de-DE / ja / pt-BR / es-419 / +160 种翻译轨
-[info] Writing video subtitles to: /tmp/sub.en.json3    8325 字节  ✅
-[info] Writing video subtitles to: /tmp/sub.en-orig.json3  32623 字节  ✅
-```
-
-**解析 json3 的结果（实测）：**
+**换客户端就绕过去了 —— 用 Innertube 的 `IOS` 客户端。**
 
 ```
-events=61  有文字的=61
-  00:01  [♪♪♪]
-  00:18  ♪ We're no strangers to love ♪
-  03:27  ♪ Never gonna tell a lie and hurt you ♪
-全文 2029 字
+① POST https://www.youtube.com/youtubei/v1/player?key=<公开key>&prettyPrint=false
+   Content-Type: application/json
+   ★★ 绝对不能发 Origin 头，发了会被 Google 判为自动化请求直接 403
+   body: {
+     "videoId": "<id>",
+     "context": { "client": {
+       "clientName": "IOS",
+       "clientVersion": "20.10.4",
+       "deviceMake": "Apple",
+       "deviceModel": "iPhone16,2",
+       "osName": "iPhone",
+       "osVersion": "18.3.2.22D82",
+       "hl": "en"
+     }},
+     "contentCheckOk": true,
+     "racyCheckOk": true
+   }
+        ↓
+② playabilityStatus = OK
+   captions.playerCaptionsTracklistRenderer.captionTracks[]   ← 字幕轨
+   streamingData.adaptiveFormats[]                            ← 音频流（IP 绑定，见 2.4）
+        ↓
+③ GET <baseUrl>&fmt=json3          ← 不需要 PoToken，不需要特殊 UA
+        ↓
+④ events[].tStartMs + segs[].utf8  → {start, end, text}[]
 ```
 
-`--skip-download -J` 还能一次拿到元信息：
+### 2.3 实测结果（4 个视频，全部成功）
+
+| 视频 | 状态 | 字幕轨 | 字幕段 | 总耗时 |
+|---|---|---|---|---|
+| `dQw4w9WgXcQ` | 200 | 6 | 61 | 302 ms |
+| `M7lc1UVf-VE` | 200 | 2 | 466 | 316 ms |
+| `jNQXAC9IVRw` | 200 | 2 | 6 | 192 ms |
+| `9bZkp7q19f0` | 200 | 1 | 133 | — |
+
+真实输出：
 
 ```
-title: Rick Astley - Never Gonna Give You Up
-duration: 213
-人工字幕轨: 5   ['en','de-DE','ja','pt-BR','es-419']
-自动字幕轨: 160
+M7lc1UVf-VE   0:10  JEFF POSNICK: Hey, everybody.
+              0:11  Welcome to this week's show of YouTube Developers Live.
+
+dQw4w9WgXcQ   0:18  ♪ We're no strangers to love ♪
+
+jNQXAC9IVRw   0:01  All right, so here we are, in front of the elephants
 ```
 
-**音频直链也能拿到，但是 IP 绑定的：**
+字幕轨清单也能拿到：
 
 ```
-$ yt-dlp -g -f bestaudio
+en     | manual | English
+en     | asr    | English (auto-generated)
+de-DE  | manual | German (Germany)
+ja     | manual | Japanese
+...
+```
+
+### 2.4 音频为什么不做
+
+IOS 客户端返回的音频地址带 `ip=67.209.191.89`（**绑请求方 IP**）：
+
+```
 https://rr2---sn-xxx.googlevideo.com/videoplayback?expire=...&ip=67.209.191.89&...
-                                                          ^^^^^^^^^^^^^^ 绑服务器 IP
-Range 请求: HTTP 206, 1024 字节, audio/mp4   ✅（从服务器发）
+Range 请求: 206, 1024 字节, audio/mp4   ← 从服务器发能过
 ```
 
-`ip=` 参数把地址锁在服务器 IP 上，**浏览器换个 IP 就用不了**。
-所以 YouTube 的音频只能由服务器代理，不能像 B 站那样让浏览器直连。
+浏览器换个 IP 就用不了，而且 `googlevideo.com` 没有 CORS。
 
+所以：**YouTube 只做字幕，不做音频。** 没有字幕的视频退回现有的「标签页音频授权」。
 
-### 2.2 抖音
+**这不是将就**——绝大多数有价值的 YouTube 内容（讲座、访谈、教程）都有自动生成的字幕。
+
+### 2.5 架构
+
+```
+用户贴 YouTube 链接
+  ↓
+前端 → 现有的 Vercel 函数 /api/resolve
+  ↓
+函数里发 IOS 客户端的 player 请求（纯 fetch，无子进程、无二进制）
+  ↓
+拿到 captionTracks → 再 GET 一次 json3 → 解析成 segments
+  ↓
+返回 kind: "captions" + segments[]（和 B 站字幕同一个形状）
+  ↓
+前端复用现有解析路径，直接生成文章
+```
+
+**零新增基础设施**：还是那个免费的 Vercel 函数，只是多一个分支。
+
+---
+
+## 3. 抖音
+
+### 3.1 已验证的事实
 
 | 探测 | 结果 |
 |---|---|
 | 短链 `v.douyin.com/xxx` | ✅ 302 → `iesdouyin.com/share/video/<id>?...&share_sign=...` |
-| 分享页 + **桌面 UA** | ❌ 302 → `www.douyin.com/video/<id>`，72 KB 的 SPA 壳，**0 处 `douyinvod`** |
-| 分享页 + **移动 UA** | ⚠️ 200，32 KB HTML，有 `_ROUTER_DATA`，但**解出来只有 1399 字节**，里面只有 `abParams` / `commonContext`，**没有任何视频数据** |
+| 分享页 + 桌面 UA | ❌ 302 → `www.douyin.com/video/<id>`，72 KB 的 SPA 壳，**0 处 `douyinvod`** |
+| 分享页 + 移动 UA | ⚠️ 200，有 `_ROUTER_DATA` 但只有 **1399 字节**，里面没有任何视频数据 |
 | **浏览器渲染后的页面** | ✅ **63 处 `douyinvod`，3 个唯一 CDN 地址** |
-| `douyinvod.com` 跨域取（从 `survivorno1.github.io` 发起） | ✅ **206，1024 字节，有效 MP4**（`00 00 00 20 66 74 79 70 69 73 6f 6d` = `ftypisom`） |
-| 同一页面的另一个 CDN 主机 | ❌ 403（签名/过期差异） |
+| **CDN 跨域取**（从 `survivorno1.github.io`） | ✅ **206 + 1024 字节有效 MP4**（`ftypisom`） |
+| 同一页面的第二个 CDN 主机 | ❌ 403（签名差异） |
 
-**结论：抖音的视频地址只在浏览器渲染后才存在；但一旦拿到，CDN 允许浏览器跨域直读。**
+> `Access-Control-Allow-Origin` 在 JS 里读出来是 `null` 属于正常——CORS 响应头本身不对页面脚本暴露。
+> 判断依据是 fetch 没抛异常且读到了有效 MP4 头。
 
-> 附注：`Access-Control-Allow-Origin` 在 JS 里读出来是 `null` 属于正常现象——CORS 响应头本身就不对页面脚本暴露。判断依据是 fetch 没抛异常且读到了 1024 字节有效 MP4 头。
+**矛盾点：地址要浏览器渲染才有，但我们读不到别的页面的 DOM。**
 
----
-
-## 3. 能力矩阵（全部实测）
-
-| 能力 | B 站 | YouTube | 抖音 |
-|---|---|---|---|
-| 服务端拿元信息 | ✅ | ✅ yt-dlp | ❌ |
-| 服务端拿字幕 | ✅ | ✅ **yt-dlp（裸 timedtext 已废）** | ❌ 无字幕 |
-| 服务端拿音频直链 | ✅ | ⚠️ 能拿，但 **IP 绑服务器** | ❌ |
-| 浏览器直读音频 | ✅ | ❌ | ✅ **有 CORS** |
-| 需要服务器跑可执行文件 | ❌ 纯 HTTP | ✅ **必须 yt-dlp** | ❌ |
-| 需要浏览器渲染 | ❌ | ❌ | ✅ **必须** |
-| 典型时长 | 分钟~小时级 | 分钟~小时级 | **15 秒~5 分钟** |
-| 推荐主路径 | 直链 + 浏览器 ASR | **yt-dlp 字幕** | **书签工具给直链** |
-| 无字幕时 | 浏览器 ASR | 标签页音频授权 | — |
-
-**这张表决定了两条完全不同的路线：**
-
-- **YouTube → 服务器**（yt-dlp 拿字幕，不需要浏览器参与）
-- **抖音 → 浏览器**（书签工具拿直链，不需要服务器参与）
-
-
----
-
-## 4. YouTube 方案
-
-### 4.1 主路径：服务器上的 yt-dlp 抓字幕
-
-**这是唯一验证可行的路。** 裸调 timedtext 已经拿不到内容了。
-
-```
-用户贴链接
-  ↓
-服务端调用 yt-dlp（子进程）
-  yt-dlp -J --skip-download <url>            → 元信息 + 字幕轨清单
-  yt-dlp --skip-download --write-subs --write-auto-subs \
-         --sub-langs "<目标语种>" --sub-format json3 -o /tmp/x <url>
-  ↓
-读 /tmp/x.<lang>.json3
-  ↓
-复用现有 parseCaptions(json3)  → segments
-  ↓
-进入方案 1 的「有字幕，直接生成文章」路径
-```
-
-**实测产物：** 8325 字节 json3 → 61 条事件 → 2029 字，时间码正常。
-
-**改动点（全部在服务端）：**
-
-| 文件 | 改动 |
-|---|---|
-| 新增 `server/ytdlp.mjs` | 调 yt-dlp 子进程，返回 `{title, duration, tracks, subtitles}` |
-| `server/resolve-core.mjs` | 新增 YouTube 分支，`UPSTREAM_ALLOW` 加 `www.youtube.com` |
-| `server/serverless.mjs` | 返回 `kind: "captions"` + `segments[]` |
-| 部署环境 | **需要能装 yt-dlp 的机器**。Vercel 函数跑不了子进程装二进制，这一条决定了要回到 VPS 或一台常驻服务器 |
-
-> **这条很重要：** yt-dlp 是个 Python/二进制可执行文件，需要真实文件系统。
-> Vercel 的 serverless 函数做不到。**YouTube 支持 = 必须有一台服务器。**
-
-**前端**：`source.mjs` 已有 `parseCaptions` 和 YouTube 的 `embeddedPlayer`，几乎不用改。
-
-### 4.2 兜底：没有字幕的视频
-
-| 选项 | 说明 |
-|---|---|
-| **标签页音频授权**（推荐，已实现） | 用户在浏览器里播，App 采集本页音频，零服务器成本 |
-| 服务器代理音频 | yt-dlp 拿到的地址带 `ip=<服务器IP>`，**浏览器换了 IP 就用不了**，只能服务器下载再转发。一个 20 分钟视频约 20-40 MB 流量 |
-
-**建议：兜底只做标签页授权。** 代理音频费流量且 YT 音频地址过期很快（`expire=` 参数）。
-
-
-### 4.3 要不要做音频代理
-
-| 选项 | 好处 | 代价 |
-|---|---|---|
-| 不做（推荐） | 零流量成本 | 无字幕的视频需要开标签页授权 |
-| 服务端代理音频 | 全自动 | Vercel 免费版 100 GB/月；B 站链路本来就不用它，只有 YouTube 无字幕视频会消耗 |
-
-**建议先不做。** 等真的有很多无字幕 YouTube 视频再说。
-
----
-
-## 5. 抖音方案
-
-抖音的核心矛盾：**地址只在渲染后才有，而我们读不到别的页面的 DOM。**
-
-### 5.1 三个可选路径
-
-| 路径 | 可行性 | 说明 |
-|---|---|---|
-| **A. 用户脚本 / 书签小工具** | ✅ 最现实 | 在抖音页面上一键把地址送到 readvideo |
-| B. 服务端无头浏览器 | ⚠️ 贵 | Vercel 免费版跑不了 Chrome，要单独一台机器 |
-| C. 逆向 `a_bogus` 签名直接调 API | ⚠️ 能通但脆 | 签名算法常变，维护成本高 |
-
-### 5.2 路径 A：书签小工具（推荐）
-
-**流程：**
+### 3.2 方案：书签小工具
 
 ```
 用户在抖音视频页
-  ↓ 点浏览器书签栏上的「用 readvideo 读」
+  ↓ 点书签栏上的「用 readvideo 读」
 书签里的一段 JS 在当前页面上下文执行：
-  - 从 <script id="RENDER_DATA"> 或 window 上的状态里找带 douyinvod 的地址
-  - 从页面标题拿视频标题
+  ① script#RENDER_DATA 的 URL-decode JSON → video.play_addr.url_list
+  ② window 上的 SPA 状态 → playAddr
+  ③ 兜底：正则扫 innerHTML 里的 douyinvod 地址
+  全部保留，按顺序试（实测有的主机 206、有的 403）
   ↓
 location.href = "https://survivorno1.github.io/readvideo/app/#douyin="
-                + encodeURIComponent(直接地址)
+                + encodeURIComponent(地址)
                 + "&title=" + encodeURIComponent(标题)
   ↓
-readvideo 读取 location.hash，走「已经有直链」的路径
-  - 不经过解析服务（省一跳，也避开抖音的反爬）
-  - 直接 fetch 音频（已验证 CDN 有 CORS）
+readvideo 读 location.hash → 走「已有直链」路径
+  → 不经过解析服务，避开抖音的反爬
+  → 直接 fetch 音频（已验证 CDN 有 CORS）
   ↓
-抖音视频通常 15 秒~5 分钟，一段就够，不需要分段
+抖音通常 15 秒~5 分钟，一段就够，不需要分段
 ```
 
 **为什么这条路最稳：**
 
-- 地址是浏览器用真实身份、真实 cookie 渲染出来的，**天然带正确签名**
-- 不碰抖音的反爬（不做签名、不伪造请求）
-- 不需要服务器参与，零流量成本
-- 抖音改版最多影响「从页面里找地址」那几行选择器
+- 地址是浏览器用真实身份、真实 cookie 渲染出来的，天然带正确签名
+- 不碰反爬（不做签名、不伪造请求）
+- 不经过服务器，零流量成本
+- 抖音改版最多影响「从页面里找地址」那几行
 
-**代价：**
+**代价：** 用户要装一次书签小工具，多一步点击。
 
-- 用户要装一次书签小工具（拖一个链接到书签栏，或者装 Tampermonkey）
-- 多一步点击
+### 3.3 不做的事
 
-### 5.3 书签小工具要抓什么（探测线索）
-
-浏览器渲染后的抖音页面里，`douyinvod` 出现 **63 次，3 个唯一地址**，形态是：
-
-```
-https://v96-web.douyinvod.com/<32位签名>/<8位时间戳>/video/tos/cn/tos-cn-ve-15/<资源ID>/?a=6383...
-https://v26-web.douyinvod.com/<32位签名>/<8位时间戳>/video/tos/cn/...       ← 实测这个 403
-```
-
-抓取策略（按优先级）：
-
-1. `script#RENDER_DATA` 的 URL-decode 后的 JSON → `video.play_addr.url_list`
-2. `window.__INIT_PROPS__` / SPA 状态对象里的 `playAddr`
-3. 兜底：正则扫 `document.documentElement.innerHTML` 里的 `douyinvod` 地址（本次探测就是这么拿到的）
-
-**多地址要全部保留**，按顺序试，因为实测不同 CDN 主机有的 206 有的 403。
-
-### 5.4 路径 C 的线索（逆向方向，留档）
-
-如果以后要做全自动（用户只贴短链）：
-
-- 抖音 web 端接口 `aweme/v1/web/aweme/detail/?aweme_id=<id>` 需要 `a_bogus`（新）或 `X-Bogus`（旧）签名
-- 签名由 `webmssdk.js`（混淆过的）生成，输入是 query string + UA + 时间戳
-- 关键是找到那个 `sign` 函数，用 Node 复刻
-- **风险**：算法随版本变；`v.douyin.com` 短链还有额外的风控参数
-- **建议**：除非真的要做成产品，否则不要碰
-
-### 5.5 抖音的特殊性
-
-| 点 | 说明 |
+| 方向 | 为什么不做 |
 |---|---|
-| 时长 | 15 秒 ~ 5 分钟，**基本不会触发分段** |
-| 容器 | MP4（`ftypisom`），`decodeAudioData` 直接能解 |
-| 音轨 | 通常只有一条 AAC |
-| 字幕 | **没有官方字幕**，必然走 ASR |
-| 地址有效期 | 带时间戳和签名，**很快就会过期**，必须拿到就用 |
+| 服务端无头浏览器 | 要一台机器，违反硬约束 |
+| 逆向 `a_bogus` / `X-Bogus` 签名 | 能通但极脆，算法随版本变；而且抖音 web 端还有设备指纹 |
+| 服务端抓分享页 | 实测拿不到（SPA 壳 / `_ROUTER_DATA` 里没数据） |
 
 ---
 
-## 6. 与方案 1 的关系
+## 4. 能力矩阵（全部实测）
 
-方案 2 复用方案 1 的所有基础设施：
+| 能力 | B 站 | YouTube | 抖音 |
+|---|---|---|---|
+| 服务端拿元信息 | ✅ | ✅ IOS 客户端 | ❌ |
+| 服务端拿字幕 | ✅ | ✅ **IOS 客户端** | ❌ 无字幕 |
+| 服务端拿音频直链 | ✅ | ⚠️ 能拿但 **IP 绑定** | ❌ |
+| 浏览器直读音频 | ✅ | ❌ 无 CORS | ✅ **有 CORS** |
+| 需要服务器跑可执行文件 | ❌ | ❌ **不需要** | ❌ |
+| 需要浏览器渲染 | ❌ | ❌ | ✅ **必须** |
+| 典型时长 | 分钟~小时级 | 分钟~小时级 | **15 秒~5 分钟** |
+| 推荐主路径 | 直链 + 浏览器 ASR | **IOS 客户端拿字幕** | **书签工具给直链** |
+| 无字幕时 | 浏览器 ASR | 标签页音频授权 | — |
+
+---
+
+## 5. 与方案 1 的关系
+
+复用方案 1 的基础设施：
 
 | 方案 1 的组件 | 方案 2 怎么用 |
 |---|---|
-| `transcripts` 文字缓存 | 键里的 `platform` 字段区分 `bilibili` / `youtube` / `douyin` |
-| 分段下载 | 抖音用不上（太短）；YouTube 只在「代理音频」时才需要 |
+| `transcripts` 文字缓存 | 键里的 `platform` 区分 `bilibili` / `youtube` / `douyin` |
+| 分段下载 | 抖音用不上（太短）；YouTube 不做音频 |
 | 30 秒窗口 + 合成时间码 | YouTube 字幕走 `parseCaptions`，不需要 ASR；抖音必然要 ASR |
 | 进度与 ETA | 抖音一次跑完，不需要 |
 
@@ -289,119 +226,152 @@ https://v26-web.douyinvod.com/<32位签名>/<8位时间戳>/video/tos/cn/...    
 
 ```
 bilibili|BV1Sj2aB9EXf|small|chinese|v1|1234.5
-youtube|dQw4w9WgXcQ|||captions|v1|0            ← 字幕轨，不涉及模型
+youtube|dQw4w9WgXcQ|||captions|v1|0        ← 字幕轨，不含模型名
 douyin|7298145681699622182|small|chinese|v1|0
 ```
 
-注意 YouTube 和抖音的字幕/转录**不含模型名**（YouTube 字幕是平台给的，抖音用默认模型），
-所以换模型不会让它们的缓存失效——这是对的，字幕跟模型无关。
+YouTube 字幕不含模型名是对的——字幕跟模型无关，换模型不该让缓存失效。
 
 ---
 
-## 7. 界面变化
+## 6. 界面变化
 
-### 7.1 平台自动识别
+### 6.1 平台识别
 
-`embeddedPlayer()` 加抖音分支；`sourceURL()` 加抖音域名白名单：
+`embeddedPlayer()` 加抖音分支；域名白名单加：
 
 ```
+youtube.com / www.youtube.com / m.youtube.com / youtu.be
 douyin.com / www.douyin.com / v.douyin.com / iesdouyin.com
 ```
 
-### 7.2 抖音的引导
+### 6.2 YouTube
 
-贴了抖音链接但只有分享短链时：
-
-```
-这是抖音分享链接。
-抖音的视频地址需要先在浏览器里渲染出来，点下面的按钮，
-在你的浏览器里打开它，然后一键把地址送回来。
-
-     [ 打开抖音原页 ]        ← 新标签打开
-     [ 我已经装好书签工具 ]   ← 首次使用显示安装引导
-```
-
-### 7.3 YouTube 的提示
+有字幕：
 
 ```
-已找到 6 条字幕轨（英语人工轨、英语自动轨、德语、日语…）
+已找到 2 条字幕轨（英语人工轨、英语自动轨）
 将使用：英语（人工轨）
 ```
 
-没有字幕时：
+没字幕：
 
 ```
 这个视频没有可用字幕。可以打开原页并授权本页音频来转写。
      [ 打开 YouTube 原页 ]
 ```
 
+### 6.3 抖音
+
+贴了分享短链时：
+
+```
+这是抖音分享链接。
+抖音的视频地址需要先在浏览器里渲染出来。点下面的按钮，
+在你的浏览器里打开它，然后一键把地址送回来。
+
+     [ 打开抖音原页 ]
+     [ 首次使用？安装书签工具 ]   ← 展开安装说明
+```
+
+用了书签小工具跳回来时：
+
+```
+已接收抖音直链：<标题>
+直接开始转写。
+```
+
 ---
 
-## 8. 边界情况
+## 7. 边界情况
 
 | 情况 | 处理 |
 |---|---|
-| YouTube 视频被限区 | `playabilityStatus` 不是 OK，但 watch 页可能仍有字幕；抓不到就提示 |
-| YouTube 只登录可见 | 服务端拿不到，走标签页授权 |
-| 抖音短链过期 | 引导用户重新复制 |
+| YouTube 视频被限区 | `playabilityStatus` 不是 OK → 提示走标签页授权 |
+| YouTube 只登录可见 | 同上 |
+| YouTube 完全没有字幕 | 提示走标签页授权，不报错 |
+| YouTube 需要登录的视频（成人/私享） | 拿不到，明确提示 |
+| 抖音短链过期 | 引导重新复制 |
 | 抖音地址 403 | 换下一个 CDN 主机重试；全失败就提示重新抓 |
 | 抖音是图文不是视频 | 没有音轨，直接报「这不是视频」 |
 | 抖音直播回放 | 无 `play_addr`，不支持 |
 | 用户直接贴 `douyinvod.com` 地址 | 当作「已有直链」处理，直接下载 |
+| 用户直接贴 `googlevideo.com` 地址 | 拒绝（IP 绑定 + 无 CORS） |
+
+---
+
+## 8. 改动清单
+
+### 服务端（现有的 Vercel 免费函数，不新增基础设施）
+
+| 文件 | 改动 |
+|---|---|
+| 新增 `resolve-core.mjs` 里的 YouTube 分支 | IOS 客户端 player 请求 + captionTracks + timedtext |
+| `resolve-core.mjs` 的 `UPSTREAM_ALLOW` | 加 `www.youtube.com`、`youtube.com` |
+| `resolve-core.mjs` 的 `CORS_ORIGIN` | 不用改（本来就允许 github.io） |
+
+**关键实现约束（踩过的坑，必须写进代码注释）：**
+
+1. **绝不发 `Origin` 头** —— 发了 Google 直接 403「We're sorry... automated queries」
+2. **绝不发 `User-Agent`** —— 和 B 站一样的教训；IOS 客户端的 UA 只在请求音频时用
+3. 客户端必须是 `IOS`，`WEB` / `ANDROID` / `VISIONOS` 都不行
+4. `key` 用公开的那个（`AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8`），不需要 API key
+
+### 前端
+
+| 文件 | 改动 |
+|---|---|
+| `web/source.mjs` | 抖音域名识别；读取 `location.hash` 的 `#douyin=<url>`；YouTube 走 `kind: "captions"` |
+| `web/index.html` | 抖音书签工具的安装引导 |
+| 新增 `bookmarklet/readvideo-douyin.js` | 可拖到书签栏的一段 JS（不参与构建，单独分发） |
+
+### 不需要改
+
+- `web/edge.mjs` —— 已经有 `kind: "captions"` 的分支
+- `web/core.mjs` 的 `parseCaptions` —— json3 格式已经支持
+- 方案 1 的分段转录 —— YouTube 用不上（靠字幕），抖音太短
 
 ---
 
 ## 9. 留给后续的线索
 
-**服务端要改的地方（等你说上服务器再动）：**
-
-| 文件 | 要加什么 |
-|---|---|
-| `server/resolve-core.mjs` | `UPSTREAM_ALLOW` 加 `www.youtube.com`、`youtube.com` |
-| 新增 `server/youtube.mjs` | watch 页 → `captionTracks` → `timedtext` |
-| `server/serverless.mjs` | 返回 `kind: "captions"`，带 `tracks[]` |
-
-**前端要改的地方：**
-
-| 文件 | 要加什么 |
-|---|---|
-| `web/source.mjs` | 抖音域名识别；读取 `location.hash` 里的 `#douyin=<url>` |
-| `web/deployment.mjs` | 不用改 |
-| `web/index.html` | 抖音书签工具的安装引导 |
-| 新增 `bookmarklet/` | 一段可拖到书签栏的 JS（不参与构建，单独分发） |
-
-**探测用的脚本（已写好，在 `readvideo-deploy/`）：**
+**探测脚本（已写好，在 `readvideo-deploy/`）：**
 
 ```
-probe-platforms.sh   抖音分享页 / 短链 / YouTube innertube
-probe-platforms2.sh  抖音跟随重定向 / YouTube WEB 客户端
-probe-platforms3.sh  抖音移动 UA SSR / YouTube watch 页 captionTracks
-parse-probe.py       解 _ROUTER_DATA 和 captionTracks
-douyin-cors.js       浏览器里测抖音 CDN 的 CORS
+probe-noserver.sh          公共 Piped / Invidious / 第三方站 / CORS 代理
+probe-invidious-piped.sh   两家的字幕内容 + CORS 头
+probe-piped-proxy.sh       Piped 代理重试 + 多实例
+probe-platforms*.sh        抖音分享页 / 短链 / yt-dlp
+yt-test/test5.mjs          裸 Innertube 各客户端对比（★ 发现 IOS 可用）
+yt-test/test6.mjs          多视频 + 音频流 + 无 UA 测试
+yt-test/test8.mjs          最终干净配方
+douyin-cors.js             浏览器里测抖音 CDN 的 CORS
 ```
 
-这些是留给你复现探测结论用的，**不属于产品代码**。
+这些是复现探测结论用的，**不属于产品代码**。
+
+**服务端要跑验证的话，直接跑 `yt-test/test8.mjs`** —— 它是最小可复现的配方。
 
 ---
 
 ## 10. 待讨论
 
 1. **抖音走书签小工具，还是先只做 YouTube？**
-   书签工具需要用户装一次，是个体验门槛。要不要先只做 YouTube 字幕，抖音放后面？
+   书签工具需要用户装一次，是个门槛。YouTube 那条路是纯后端，改完就能用。
 
 2. **书签小工具的分发方式？**
-   - 拖拽式书签（零安装，但移动端用不了）
+   - 拖拽式书签（零安装，移动端用不了）
    - Tampermonkey 用户脚本（要装扩展）
    - 两者都提供
 
-3. **YouTube 要不要做音频代理？**
-   不做的话，无字幕视频要开标签页授权。做了要承担流量成本。
+3. **YouTube 字幕要不要做语种选择？**
+   有的视频有 6 条轨（含中文翻译轨）。要不要让用户在界面上选，还是自动挑（人工轨优先 → 目标语种 → 第一条）？
 
 4. **抖音要不要支持「图文」？**
    抖音现在很多内容是图文，没有音轨，转不了。
 
 5. **平台优先级？**
-   如果只能先做一个，是 YouTube（覆盖广、字幕路径干净）还是抖音（你更常用）？
+   如果只能先做一个：YouTube（纯后端，一次改完）还是抖音（要用户装东西）？
 
 ---
 
@@ -409,11 +379,13 @@ douyin-cors.js       浏览器里测抖音 CDN 的 CORS
 
 | 用例 | 期望 |
 |---|---|
-| 有字幕的 YouTube 视频 | 服务端拿到字幕，直接出文章，不下载音频 |
+| 有字幕的 YouTube 视频 | 拿到字幕，直接出文章，不下载音频 |
 | 只有自动字幕的 YouTube | 用 `kind:"asr"` 的轨道 |
+| 多语种 YouTube 视频 | 按目标语种挑轨道，挑不到用第一条 |
 | 无字幕的 YouTube | 提示走标签页授权，不报错 |
-| 抖音分享短链 | 引导用户走书签工具 |
-| 抖音直链（`douyinvod.com`） | 直接下载 + 转录，秒出 |
+| 限区 / 私享 YouTube | 明确提示，不静默失败 |
+| 抖音分享短链 | 引导走书签工具 |
+| 抖音直链（`douyinvod.com`） | 直接下载 + 转录 |
 | 抖音 CDN 多主机 | 第一个 403 时自动试下一个 |
 | 三个平台的缓存互不串 | 键里的 `platform` 生效 |
 | 同一个 YouTube 视频看两次 | 第二次全命中文字缓存 |
