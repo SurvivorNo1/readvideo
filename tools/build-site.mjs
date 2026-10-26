@@ -17,6 +17,7 @@ export const APP_FILES = [
   "edge.mjs",
   "download.mjs",
   "direct-audio.mjs",
+  "mp4-segment.mjs",
   "audio-bridge.html",
   "audio-bridge.mjs",
   "deployment.mjs",

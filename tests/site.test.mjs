@@ -3,7 +3,28 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { build, APP_FILES } from "../tools/build-site.mjs";
+import { build, APP_FILES, ROOT } from "../tools/build-site.mjs";
+
+test("every local module imported by web/ is shipped in the build", async () => {
+  // 这条守卫的意义：APP_FILES 是手写清单，漏加一个文件会导致线上 404，
+  // 而 source.mjs 之类的静态 import 会让整个应用直接崩。
+  const shipped = new Set(APP_FILES);
+  const problems = [];
+
+  for (const name of APP_FILES) {
+    if (!name.endsWith(".mjs") && !name.endsWith(".js")) continue;
+    const source = await fs.readFile(path.join(ROOT, "web", name), "utf8");
+    for (const match of source.matchAll(
+      /(?:from|import)\s*\(?\s*["'](\.\/[^"']+\.(?:mjs|js))["']/g,
+    )) {
+      const target = match[1].replace("./", "");
+      if (!shipped.has(target)) problems.push(`${name} -> ${target}`);
+    }
+  }
+
+  assert.deepEqual(problems, [], `这些本地模块被 import 但不在构建清单里：\n${problems.join("\n")}`);
+});
+
 test("static package contains only reviewed site/app files with resolvable local links", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "readvideo-site-"));
   try {
