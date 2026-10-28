@@ -21,7 +21,10 @@ export class ReadingSession {
     onProgress = () => {},
     onFinished = () => {},
     onError = () => {},
+    // 超长音频开始前征求同意；返回 false 就取消。null 表示不询问。
+    confirmLong = null,
   }) {
+    this.confirmLong = confirmLong;
     this.url = url;
     this.language = language;
     this.offset = offset;
@@ -182,6 +185,7 @@ export class ReadingSession {
       elapsed: this.elapsed,
       pending,
       eta,
+      cacheHits: this.cacheHits || 0,
       device: this.asr.device,
       error: this.queue.error,
       ended: this.ended,
@@ -266,6 +270,15 @@ export class ReadingSession {
           this.status(`全部命中本机缓存，直接出结果 · ${replay} 段`);
           await this.finish();
           return;
+        }
+
+        // 没命中缓存才问。命中过的视频不该再弹一次。
+        if (this.confirmLong && stream.totalSeconds > 1800) {
+          const ok = await this.confirmLong(stream.totalSeconds);
+          if (!ok) {
+            stream.close?.();
+            throw Error("已取消。");
+          }
         }
 
         this.status(`音频分 ${stream.groups} 段处理，内存占用恒定。`);

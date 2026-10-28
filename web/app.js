@@ -335,6 +335,19 @@ function configureSession(url) {
     model: ($("#asr-model") || {}).value || "small",
     backend: $("#asr-backend").value,
     offset: Math.max(0, Number($("#capture-offset").value) || 0),
+    // 超过 30 分钟才问一次。估算按实测 5.7 倍实时（30 秒窗口）。
+    confirmLong: async (seconds) => {
+      const minutes = Math.round(seconds / 60);
+      const eta = Math.max(1, Math.round(minutes / 5.7));
+      const warn =
+        seconds > 14400 ? "（超过 4 小时，识别可能要很久）" : "";
+      return globalThis.confirm(
+        `这个视频 ${minutes} 分钟${warn}。\n\n` +
+          `浏览器会分段处理，内存占用约 115 MB，与时长无关。\n` +
+          `按当前设备速度，识别大约需要 ${eta} 分钟。\n` +
+          `随时可以停止，已转好的部分会保留。\n\n开始吗？`,
+      );
+    },
     onTranscript: (data) => {
       transcript = data;
       lastURL = url;
@@ -395,10 +408,13 @@ function configureSession(url) {
         state.eta && state.eta > 30
           ? ` · 预计还需 ${Math.ceil(state.eta / 60)} 分钟`
           : "";
+      const cacheText =
+        state.cacheHits > 0 ? ` · 缓存命中 ${state.cacheHits} 段` : "";
       $("#capture-status").textContent =
         (state.message ||
           (state.error ? "识别暂停，音频仍保留。" : "音频在浏览器内处理。")) +
         ` 已转 ${stamp(state.elapsed - state.pending)} / ${stamp(state.elapsed)}` +
+        cacheText +
         etaText;
       $("#recovery-actions").hidden = !state.error;
       if (state.ended) $("#capture-stop").hidden = true;
