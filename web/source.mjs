@@ -413,6 +413,7 @@ export async function openSegmentStream(source, progress = () => {}, signal) {
     return {
       groups: groups.length,
       totalSeconds,
+      close: release,
       async *[Symbol.asyncIterator]() {
         try {
           for (let i = 0; i < groups.length; i++) {

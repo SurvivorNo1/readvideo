@@ -113,6 +113,61 @@ export class ReadingSession {
       },
     );
   }
+  /**
+   * 尝试只用文字缓存拼出整条字幕。
+   * 返回命中的段数；有任何一段缺失就返回 0，让调用方走正常流程。
+   */
+  async tryReplay(totalSeconds) {
+    if (!this.checkpoints || !this.cacheMeta || !(totalSeconds > 0)) return 0;
+
+    // 复刻 windowAudio 的窗口起点：offset = max(0, own - overlap) / rate
+    const rate = 16000;
+    const totalSamples = Math.round(totalSeconds * rate);
+    const starts = [];
+    for (let own = 0; own < totalSamples; own += WINDOW_SECONDS * rate) {
+      const start = Math.max(0, own - WINDOW_OVERLAP * rate);
+      starts.push(start / rate);
+    }
+    if (!starts.length) return 0;
+
+    const keys = starts.map((s) =>
+      transcriptKey({ ...this.cacheMeta, windowStart: s }),
+    );
+
+    const hits = [];
+    for (const key of keys) {
+      let row;
+      try {
+        row = await this.checkpoints.get(key);
+      } catch {
+        return 0;
+      }
+      if (!row || !Array.isArray(row.chunks) || !row.chunks.length) return 0;
+      hits.push({ key, row });
+    }
+
+    // 全部命中：按时间顺序合并，直接产出字幕
+    let merged = [];
+    for (const { row } of hits) {
+      const start = Number(row.start) || 0;
+      const end = Number(row.end) || totalSeconds;
+      merged = mergeTranscript(merged, row.chunks, {
+        offset: start,
+        keepFrom: start,
+        keepUntil: end,
+      });
+    }
+    if (!merged.length) return 0;
+
+    this.transcript.segments = merged;
+    this.transcript.duration = totalSeconds;
+    this.elapsed = totalSeconds;
+    this.transcript.complete = true;
+    this.onTranscript(this.transcript);
+    this.status();
+    return hits.length;
+  }
+
   status(extra = "") {
     const now = Date.now();
     const pending = this.queue.pendingSeconds;
@@ -202,6 +257,17 @@ export class ReadingSession {
       if (stream) {
         this.cacheMeta.durationSec = Math.round(stream.totalSeconds);
         this.transcript.duration = stream.totalSeconds;
+
+        // ★ 全命中快速路径：只读了 256 KB 的头部（拿到总时长），
+        //   剩下的音频一段都不下载、也不解码，直接从文字缓存拼出字幕。
+        const replay = await this.tryReplay(stream.totalSeconds);
+        if (replay) {
+          stream.close?.();
+          this.status(`全部命中本机缓存，直接出结果 · ${replay} 段`);
+          await this.finish();
+          return;
+        }
+
         this.status(`音频分 ${stream.groups} 段处理，内存占用恒定。`);
         for await (const batch of stream) {
           this.elapsed = batch.total;
