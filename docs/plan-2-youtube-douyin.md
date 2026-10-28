@@ -45,15 +45,40 @@
 |---|---|
 | IOS 客户端 ＋ 多客户端轮换 ＋ visitorData（部署在 Vercel） | ❌ 只有极少数视频能过，其余 `playabilityStatus: ERROR` |
 | 同上，部署到 Cloudflare Worker（`--temporary` 免登录） | ❌ `LOGIN_REQUIRED: Sign in to confirm you're not a bot` |
+| **完整 PoToken（BotGuard 逆向）** | ✅ 链路跑通了，❌ **但救不了 Vercel** |
 | 浏览器直接 fetch innertube | ❌ `TypeError: Failed to fetch`（无 ACAO） |
 | 浏览器在 youtube.com 页面内 fetch `baseUrl` | ❌ HTTP 200 但 **0 字节** |
 | `get_transcript` ＋ 自造 params | ❌ HTTP 400 |
 | `get_transcript` ＋ 页面里真实的 `getTranscriptEndpoint.params` | ❌ **`FAILED_PRECONDITION`**（缺 PoToken） |
 | 点「Show transcript」后读 DOM | ❌ 面板未渲染，`ytd-transcript-segment-renderer` 为 0 |
 
-**根本原因：** YouTube 现在对字幕接口强制 PoToken。PoToken 需要跑 BotGuard VM
-（`bgutils-js` ＋ DOM 环境）才能生成，而 BotGuard 本身又会检测自动化环境。
-免费 serverless 的出口 IP 一律被判定为 bot。
+### PoToken 的完整记录（走到底了）
+
+按 YouTube 播放器的真实流程逆向复刻，用开源的 `bgutils-js` ＋ `jsdom`：
+
+```
+1. 取 visitorData                                ✅ 464 字符
+2. 向 WAA 要 BotGuard challenge                   ✅ 解释器 63,755 字节 / 字节码 10,031 字节
+3. 在 jsdom 里执行解释器，加载 BotGuard VM         ✅ 成功
+4. snapshot                                      ✅ 1,248 字符
+5. 换 WAA integrity token                        ✅ 92 字符
+6. mint PoToken                                  ✅ 728 字符
+7. 带 &pot= 取字幕                                ✅ 65,976 字节 / 466 事件
+```
+
+**在腾讯云的机器上，这一整套全部成功。**
+
+但部署到 Vercel 后，卡在**第 7 步之前**——连 `playabilityStatus` 都是 `ERROR`，
+根本走不到字幕那一步。同一个视频在腾讯云上是 `OK`。
+
+**所以不是 PoToken 的问题，是 AWS 的 IP 在 player 接口就被拒了。**
+PoToken 能证明"运行环境像真浏览器"，证明不了"IP 不是机房"。
+
+代码已写好并随函数部署（依赖可选加载，没装就自动降级）。哪天换到不被拦的出口，
+这套 PoToken 立刻就能起作用。
+
+**根本原因：** YouTube 对数据中心 IP 的 player 接口本身就有额外限制，
+字幕接口又强制 PoToken。两重叠加，免费 serverless 全灭。
 
 **所以 YouTube 只有三条路：**
 
