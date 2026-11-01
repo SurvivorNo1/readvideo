@@ -62,6 +62,15 @@ export async function build(destination = path.join(ROOT, ".qa/pages")) {
     .replace(/(["'])style\.css(["'])/g, `$1style.css?v=${version}$2`);
   await fs.writeFile(appIndex, html);
 
+  // 书签工具安装页：先跑 bookmarklet 构建，再拷进站点
+  try {
+    const installPage = path.join(ROOT, "bookmarklet/dist/install.html");
+    await fs.access(installPage);
+    await fs.copyFile(installPage, path.join(destination, "app/bookmarklet.html"));
+  } catch {
+    /* 没构建过书签工具就跳过 */
+  }
+
   await fs.writeFile(path.join(destination, ".nojekyll"), "");
 }
 if (

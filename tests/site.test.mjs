@@ -47,6 +47,7 @@ test("static package contains only reviewed site/app files with resolvable local
       "assets/article.png",
       "assets/browser-asr.png",
       "assets/icon.svg",
+      "app/bookmarklet.html",
       ...APP_FILES.map((f) => "app/" + f),
     ];
     assert.deepEqual(files.sort(), expected.sort());

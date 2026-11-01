@@ -235,9 +235,11 @@ function updateReading() {
         (transcript.timeline === "capture" ? "采集相对时间" : "音频时间")
       : transcript.source === "subtitle-file"
         ? "导入字幕"
-        : (transcript.automatic ? "自动字幕" : "人工字幕") +
-          " · " +
-          transcript.language,
+        : transcript.source === "youtube-captions"
+          ? "YouTube 字幕 · " + (transcript.automatic ? "自动生成" : "人工")
+          : (transcript.automatic ? "自动字幕" : "人工字幕") +
+            " · " +
+            transcript.language,
     chars.toLocaleString() + " 字符",
   ]
     .filter(Boolean)
@@ -901,3 +903,143 @@ for (const choice of document.querySelectorAll("[name=mode]")) {
     document.querySelector("#article-length").disabled = summary;
   });
 }
+
+// ───────────────── 抖音书签小工具的入口 ─────────────────
+//
+// 书签工具在抖音页面上把渲染好的直链抓出来，跳到
+//   #douyin=<url1>|<url2>|...&title=<标题>
+// 这里逐个探测（实测有的 CDN 主机 206、有的 403），找到能用的就直接开始。
+async function bootFromDouyinHash() {
+  const m = /[#&]douyin=([^&]+)/.exec(location.hash || "");
+  if (!m) return;
+
+  const urls = decodeURIComponent(m[1]).split("|").filter(Boolean);
+  const t = /[#&]title=([^&]*)/.exec(location.hash || "");
+  const title = t ? decodeURIComponent(t[1]) : "";
+  // 清掉 hash，刷新页面不会重复触发
+  history.replaceState(null, "", location.pathname + location.search);
+
+  if (!urls.length) return;
+
+  $("#video-url").value = urls[0];
+  $("#video-url").dispatchEvent(new Event("input", { bubbles: true }));
+  if (title) $("#source-title").textContent = title;
+
+  let picked = null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { Range: "bytes=0-1023" },
+        mode: "cors",
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+      });
+      if (res.status === 206 || res.status === 200) {
+        picked = url;
+        break;
+      }
+    } catch {}
+  }
+
+  if (!picked) {
+    showError(
+      new Error(
+        "抖音直链已失效，请回到抖音视频页重新点一次书签（地址带签名，过期很快）。",
+      ),
+    );
+    return;
+  }
+
+  $("#video-url").value = picked;
+  $("#video-url").dispatchEvent(new Event("input", { bubbles: true }));
+  $("#extract-only").click();
+}
+
+// ───────────────── YouTube 书签小工具的接收端 ─────────────────
+//
+// 书签工具在 YouTube 页面里用 8 倍速播放，把 CC 字幕一条条收下来，
+// 播完（或用户点停止）后通过 postMessage 发过来。
+// 这里只负责接收和渲染，不下载音频、不跑 ASR。
+async function bootFromYouTubeHash() {
+  const m = /[#&]youtube=([\w-]{11})/.exec(location.hash || "");
+  if (!m) return;
+  const vid = m[1];
+  const t = /[#&]title=([^&]*)/.exec(location.hash || "");
+  const title = t ? decodeURIComponent(t[1]) : "";
+  history.replaceState(null, "", location.pathname + location.search);
+
+  // 告诉书签工具这边就绪了。多喊几次——书签那边可能还没绑好 listener。
+  const hello = () => {
+    try {
+      window.opener?.postMessage({ type: "readvideo-ready", videoId: vid }, "*");
+    } catch {}
+  };
+  hello();
+  const helloTimer = setInterval(hello, 1200);
+  setTimeout(() => clearInterval(helloTimer), 90000);
+
+  $("#capture-panel").hidden = false;
+  if (title) $("#source-title").textContent = title;
+  const heading = document.querySelector(".capture-heading h2");
+  if (heading) heading.textContent = "正在从 YouTube 页面收集字幕";
+  $("#capture-status").textContent =
+    "已连接 · 8 倍速收集中，请不要关掉那个 YouTube 标签页。";
+  $("#recovery-actions").hidden = true;
+
+  addEventListener("message", (ev) => {
+    if (!/^https:\/\/([a-z0-9-]+\.)?youtube\.com$/.test(ev.origin)) return;
+    const d = ev.data;
+    if (!d || d.type !== "readvideo-captions") return;
+    clearInterval(helloTimer);
+
+    const segments = Array.isArray(d.segments)
+      ? d.segments
+          .map((s) => ({
+            start: Number(s.start) || 0,
+            end: Number(s.end) || 0,
+            text: String(s.text || "").trim(),
+          }))
+          .filter((s) => s.text && s.end > s.start)
+      : [];
+
+    if (!segments.length) {
+      $("#capture-status").textContent =
+        "没收到字幕。可能这个视频没有 CC，或者收集中途就被关掉了。";
+      showError(
+        new Error("没有收到字幕。可以回到 YouTube 页面重新点一次书签。"),
+      );
+      return;
+    }
+
+    transcript = {
+      segments,
+      title: d.title || title || `YouTube ${vid}`,
+      url: `https://www.youtube.com/watch?v=${vid}`,
+      duration: Number(d.duration) || segments.at(-1).end,
+      source: "youtube-captions",
+      partial: d.reason === "stopped",
+      automatic: !!d.automatic,
+      language: d.language || "en",
+    };
+    lastURL = transcript.url;
+    result = null;
+    $("#search").value = "";
+    updateReading();
+    selectTab("transcript");
+    $("#capture-status").textContent =
+      `收到 ${segments.length} 条字幕` +
+      (d.reason === "stopped" ? "（中途停止，可能不完整）" : "，已完整");
+  });
+}
+
+if (document.readyState === "loading")
+  addEventListener("DOMContentLoaded", () => {
+    bootFromYouTubeHash().catch(() => {});
+  });
+else bootFromYouTubeHash().catch(() => {});
+
+if (document.readyState === "loading")
+  addEventListener("DOMContentLoaded", () => {
+    bootFromDouyinHash().catch(() => {});
+  });
+else bootFromDouyinHash().catch(() => {});
