@@ -992,6 +992,12 @@ async function bootFromYouTubeHash() {
     if (!d || d.type !== "readvideo-captions") return;
     clearInterval(helloTimer);
 
+    // 回执，让书签工具停止重发。之前没有回执，书签发一次就完，
+    // 这边 listener 还没就绪的话整批字幕就丢了。
+    try {
+      ev.source?.postMessage({ type: "readvideo-got", videoId: d.videoId }, "*");
+    } catch {}
+
     const segments = Array.isArray(d.segments)
       ? d.segments
           .map((s) => ({

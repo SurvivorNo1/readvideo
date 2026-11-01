@@ -135,6 +135,7 @@
   });
 
   // ── 强制倍速 ──
+  var resendTimer = null;
   var rateTimer = setInterval(function () {
     if (!collecting) return;
     if (video.playbackRate !== RATE) video.playbackRate = RATE;
@@ -159,6 +160,7 @@
     collecting = false;
     observer.disconnect();
     clearInterval(rateTimer);
+    if (resendTimer) clearInterval(resendTimer);
     removeEventListener("message", onMessage);
     video.playbackRate = 1;
     push();
@@ -166,19 +168,37 @@
     // 补齐到视频末尾：把最后一条的 end 拉到结尾
     if (segments.length) segments[segments.length - 1].end = video.duration || segments[segments.length - 1].end;
 
-    try {
-      win.postMessage(
-        {
-          type: "readvideo-captions",
-          videoId: vid,
-          title: title,
-          duration: Math.round(video.duration || 0),
-          reason: reason,
-          segments: segments,
-        },
-        new URL(HOME).origin,
-      );
-    } catch (e) {}
+    // 发过去，并且一直重发直到 readvideo 回执。
+    // 之前只发一次，如果那边 listener 还没就绪，整批字幕就丢了。
+    var payload = {
+      type: "readvideo-captions",
+      videoId: vid,
+      title: title,
+      duration: Math.round(video.duration || 0),
+      reason: reason,
+      segments: segments,
+    };
+    var acked = false;
+    var tries = 0;
+    function onAck(ev) {
+      if (!ev.data || ev.data.type !== "readvideo-got") return;
+      acked = true;
+      removeEventListener("message", onAck);
+      if (resendTimer) clearInterval(resendTimer);
+      label.textContent = "已送达";
+      say("readvideo 已收到 " + segments.length + " 条字幕");
+    }
+    addEventListener("message", onAck);
+
+    function send() {
+      if (acked || tries > 40) return;
+      tries++;
+      try {
+        win.postMessage(payload, new URL(HOME).origin);
+      } catch (e) {}
+    }
+    resendTimer = setInterval(send, 1500);
+    send();
 
     label.textContent = "完成";
     say(
@@ -195,6 +215,7 @@
     collecting = false;
     observer.disconnect();
     clearInterval(rateTimer);
+    if (resendTimer) clearInterval(resendTimer);
     removeEventListener("message", onMessage);
     video.playbackRate = 1;
     box.remove();
