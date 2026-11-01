@@ -127,18 +127,35 @@ export async function discoverSource(
     return { kind: "media", url: url.href };
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), 6000);
+  // 抖音 CDN 会按 Referer 判来源，带着本站地址过去直接 403。
   const request = (target) =>
     fetcher(target, {
       mode: "cors",
       credentials: "omit",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal,
+      redirect: "follow",
+    });
+  // 嗅探专用：只取 1 KB。抖音/B站那种几十 MB 的直链，完整 GET 会直接超时，
+  // 用户就会看到「字幕不可直接读取」而白白退回标签页录制。
+  const probe = (target) =>
+    fetcher(target, {
+      mode: "cors",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+      headers: { Range: "bytes=0-1023" },
       signal: controller.signal,
       redirect: "follow",
     });
   try {
-    const response = await request(url.href);
+    const response = await probe(url.href);
     if (!response.ok) throw Error();
     const type = response.headers.get("content-type") || "";
-    if (/^(audio|video)\//i.test(type)) return { kind: "media", url: url.href };
+    if (/^(audio|video)\//i.test(type)) {
+      // 确认是媒体就直接返回，剩下的字节不用下，断掉省流量。
+      response.body?.cancel?.().catch?.(() => {});
+      return { kind: "media", url: url.href };
+    }
     const text = await readText(response);
     if (
       ["srt", "vtt", "json", "json3"].includes(ext) ||
@@ -242,20 +259,25 @@ export async function decodeMedia(value, progress = () => {}, fetcher = fetch) {
     response = await fetcher(url.href, {
       mode: "cors",
       credentials: "omit",
+      // 抖音 CDN 按 Referer 判来源，带着本站地址过去直接 403。
+      referrerPolicy: "no-referrer",
       signal: AbortSignal.timeout(120000),
     });
   if (!response.ok)
-    throw Error("无法读取音频直链。平台页面请改用标签页音频授权。");
+    throw Error("无法读取音频直链。链接可能已过期（抖音地址几分钟就失效），请重新获取。");
   const reader = response.body.getReader(),
     parts = [];
   let size = 0;
+  // 抖音是普通 MP4（非分片，没有 sidx），只能整包下载再解码。
+  // 实测一个 20 分钟的抖音视频就有 253 MB，128 MB 的上限挡不住。
+  const MAX_MEDIA = 400000000;
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 128000000) {
+    if (size > MAX_MEDIA) {
       await reader.cancel();
-      throw Error("音频文件超过 128 MB，请分段处理或使用标签页采集。");
+      throw Error("音频文件超过 400 MB，请改用标签页采集。");
     }
     parts.push(value);
     progress(`正在读取音频 · ${(size / 1000000).toFixed(1)} MB`, 10);
@@ -269,8 +291,8 @@ export async function decodeMedia(value, progress = () => {}, fetcher = fetch) {
   return decodeAudioBytes(bytes);
 }
 export async function decodeAudioBytes(bytes) {
-  if (!bytes.byteLength || bytes.byteLength > 128000000)
-    throw Error("音频文件需在 128 MB 以内，且不能为空。");
+  if (!bytes.byteLength || bytes.byteLength > 400000000)
+    throw Error("音频文件需在 400 MB 以内，且不能为空。");
   const context = new AudioContext({sampleRate:16000});
   try {
     const buffer=bytes.byteOffset===0&&bytes.byteLength===bytes.buffer.byteLength?bytes.buffer:bytes.slice().buffer;
