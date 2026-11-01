@@ -52,6 +52,10 @@
   }
 
   // ── 页面内进度浮层 ──
+  // readvideo 弹出来会抢焦点，YouTube 退到后台就会被浏览器节流，
+  // MutationObserver 追不上 8 倍速的字幕刷新。所以开完立刻把焦点抢回来。
+  setTimeout(function () { try { window.focus(); } catch (e) {} }, 400);
+
   var box = document.createElement("div");
   box.style.cssText =
     "position:fixed;right:16px;top:16px;z-index:2147483647;background:#16181C;color:#fff;" +
@@ -78,15 +82,29 @@
   }
 
   // ── 开 CC ──
+  // 播放器刚加载时 tracklist 可能是空的，等一会儿再试，别一上来就判死刑。
   var player = document.getElementById("movie_player");
   var ccOk = false;
-  try {
-    var tracks = (player && player.getOption("captions", "tracklist")) || [];
-    if (tracks.length) {
-      player.setOption("captions", "track", { languageCode: tracks[0].languageCode });
-      ccOk = true;
+  var tracks = [];
+  for (var attempt = 0; attempt < 8 && !ccOk; attempt++) {
+    try {
+      tracks = (player && player.getOption("captions", "tracklist")) || [];
+      if (tracks.length) {
+        player.setOption("captions", "track", {
+          languageCode: tracks[0].languageCode,
+        });
+        // 确认真的挂上了
+        var active = player.getOption("captions", "track");
+        ccOk = !!(active && active.languageCode);
+      }
+    } catch (e) {}
+    if (!ccOk) {
+      say("等播放器准备好…\n第 " + (attempt + 1) + " 次尝试");
+      // 同步小睡：书签里没有 await，用忙等会卡住页面，所以只等很短
+      var until = Date.now() + 350;
+      while (Date.now() < until) {}
     }
-  } catch (e) {}
+  }
 
   if (!ccOk) {
     cleanup();
@@ -213,7 +231,8 @@
 
   function cleanup() {
     collecting = false;
-    observer.disconnect();
+    // 注意：没有 CC 时会在这里被调用，那时 observer 还没创建（var 提升为 undefined）
+    if (observer) observer.disconnect();
     clearInterval(rateTimer);
     if (resendTimer) clearInterval(resendTimer);
     removeEventListener("message", onMessage);
