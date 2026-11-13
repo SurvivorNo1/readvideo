@@ -203,11 +203,8 @@ export function buildPrompt({
     maxTokens: mode === "brief" ? 2000 : LENGTHS[length].tokens,
   };
 }
-export async function chatRequest(
-  config,
-  messages,
-  { maxTokens = 3000, fetcher = fetch, signal } = {},
-) {
+// 一次请求。返回 { content, truncated }
+async function chatOnce(config, messages, { maxTokens, fetcher, signal }) {
   const body = {
     model: config.model,
     messages,
@@ -252,15 +249,54 @@ export async function chatRequest(
   }
   const choice = data?.choices?.[0],
     content = choice?.message?.content;
-  if (choice?.finish_reason === "length")
-    throw Error("模型输出达到上限，文章未完整生成，请选择较短篇幅。");
-  if (
-    typeof content !== "string" ||
-    !content.trim() ||
-    content.length > 1000000
-  )
+  if (typeof content !== "string" || content.length > 1000000)
     throw Error("模型没有返回有效内容。");
-  return content.trim();
+  return {
+    content: content.trim(),
+    truncated: choice?.finish_reason === "length",
+  };
+}
+
+// 续写时只带上已写内容的尾巴，不带全文——否则上下文越滚越大，最后又超限。
+function continuationMessages(messages, written, tail) {
+  const system = messages.filter((m) => m.role === "system");
+  const ask = messages.filter((m) => m.role !== "system").pop();
+  return [
+    ...system,
+    { role: "user", content: ask?.content || "" },
+    { role: "assistant", content: written.slice(-tail) },
+    {
+      role: "user",
+      content:
+        "上面这段写到一半被输出长度截断了。请从断掉的地方接着往下写完，" +
+        "不要重复已经写过的内容，不要重新开头，不要解释或加说明，直接续写正文。",
+    },
+  ];
+}
+
+export async function chatRequest(
+  config,
+  messages,
+  { maxTokens = 3000, fetcher = fetch, signal, maxRounds = 4 } = {},
+) {
+  const TAIL = 3000;
+  const MAX_TOTAL = 200000;
+  let full = "";
+  for (let round = 0; round <= maxRounds; round++) {
+    const { content, truncated } = await chatOnce(
+      config,
+      round === 0 ? messages : continuationMessages(messages, full, TAIL),
+      { maxTokens, fetcher, signal },
+    );
+    if (!content) {
+      if (!full) throw Error("模型没有返回有效内容。");
+      break;
+    }
+    full += content;
+    if (!truncated || full.length >= MAX_TOTAL) break;
+  }
+  if (!full.trim()) throw Error("模型没有返回有效内容。");
+  return full.trim();
 }
 export function captionChunks(segments, limit = 10000) {
   const chunks = [];

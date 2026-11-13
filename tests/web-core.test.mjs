@@ -148,3 +148,74 @@ test("browser-direct request redacts provider errors and sends only selected end
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   assert.equal(JSON.parse(request.opts.body).thinking.type, "disabled");
 });
+
+test("truncated output continues from the break instead of failing", async () => {
+  const config = resolveConfig({
+    provider: "deepseek",
+    api_key: "memory-test",
+  });
+  const seen = [];
+  const replies = [
+    { content: "第一段写到一半", finish: "length" },
+    { content: "，接着写完了。", finish: "stop" },
+  ];
+  const text = await chatRequest(
+    config,
+    [
+      { role: "system", content: "sys" },
+      { role: "user", content: "写文章" },
+    ],
+    {
+      maxTokens: 100,
+      fetcher: async (url, opts) => {
+        const body = JSON.parse(opts.body);
+        seen.push(body.messages);
+        const r = replies[seen.length - 1];
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              { finish_reason: r.finish, message: { content: r.content } },
+            ],
+          }),
+        };
+      },
+    },
+  );
+  assert.equal(text, "第一段写到一半，接着写完了。");
+  assert.equal(seen.length, 2);
+  // 第二次请求必须带上已写的尾巴，并且明确要求续写、不要重来
+  assert.equal(seen[1].at(-2).content, "第一段写到一半");
+  assert.match(seen[1].at(-1).content, /接着往下写/);
+});
+
+test("stops after the round cap instead of looping forever", async () => {
+  const config = resolveConfig({
+    provider: "deepseek",
+    api_key: "memory-test",
+  });
+  let calls = 0;
+  const text = await chatRequest(
+    config,
+    [{ role: "user", content: "写文章" }],
+    {
+      maxTokens: 100,
+      maxRounds: 3,
+      fetcher: async () => {
+        calls++;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              { finish_reason: "length", message: { content: "片段" } },
+            ],
+          }),
+        };
+      },
+    },
+  );
+  assert.equal(calls, 4);
+  assert.equal(text, "片段".repeat(4));
+});
